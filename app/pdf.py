@@ -26,7 +26,7 @@ class PDFReader:
                 text = page.get_text("text") or ""
 
                 pix = page.get_pixmap(
-                    matrix=fitz.Matrix(1, 1),
+                    dpi=300,
                     alpha=False,
                 )
 
@@ -43,7 +43,7 @@ class PDFReader:
             page = doc.load_page(page_number - 1)
 
             pix = page.get_pixmap(
-                matrix=fitz.Matrix(2, 2),
+                dpi=300,
                 alpha=False,
             )
 
