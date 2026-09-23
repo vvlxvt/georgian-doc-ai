@@ -21,19 +21,21 @@ class DocumentPipeline:
         self.ocr_processor = ocr_processor
 
     def process(self, path: str) -> str:
-
         path = Path(path)
-        
+        file_hash = self._hash_file(path)
+
+        document = self.session.query(Document).filter_by(file_hash=file_hash).first()
+
+        if not document:
+            document = Document(
+                filename=path.name,
+                file_hash=file_hash,
+            )
+            self.session.add(document)
+            self.session.commit()
+
         reader = PDFReader(str(path))
         pages = reader.pages()
-
-        document = Document(
-            filename=path.name,
-            file_hash=self._hash_file(path),
-        )
-
-        self.session.add(document)
-        self.session.commit()
 
         for page in pages:
             self._process_page(
@@ -43,43 +45,51 @@ class DocumentPipeline:
 
         return document.id
 
-    def _process_page(self, document, page):
-
-        existing = (
+    def _process_page(self, document: Document, page):
+        existing_page = (
             self.session.query(DocumentPage)
             .filter_by(
                 document_id=document.id,
                 page_number=page.page_number,
-                content_hash=page.content_hash,
             )
             .first()
         )
 
-        if existing and existing.status == PageStatus.PARSED:
-            print(f"Page {page.page_number}: skipped")
+        # Same page version was already processed successfully.
+        if (
+            existing_page
+            and existing_page.status == PageStatus.PARSED
+            and existing_page.content_hash == page.content_hash
+        ):
+            print(f"Page {page.page_number}: " "skipped (already parsed)")
             return
 
+        # Native text extraction succeeded.
         if len(page.text) >= MIN_TEXT_LENGTH:
+            if existing_page:
+                existing_page.content_hash = page.content_hash
+                existing_page.status = PageStatus.PARSED
+                existing_page.extraction_method = "native"
+                existing_page.text = page.text
+                existing_page.error = None
+            else:
+                db_page = DocumentPage(
+                    document_id=document.id,
+                    page_number=page.page_number,
+                    content_hash=page.content_hash,
+                    status=PageStatus.PARSED,
+                    extraction_method="native",
+                    text=page.text,
+                )
+                self.session.add(db_page)
 
-            db_page = DocumentPage(
-                document_id=document.id,
-                page_number=page.page_number,
-                content_hash=page.content_hash,
-                status=PageStatus.PARSED,
-                extraction_method="native",
-                text=page.text,
-            )
-
-            self.session.add(db_page)
             self.session.commit()
 
             print(f"Page {page.page_number}: native text")
-
             return
 
+        # Native text extraction was insufficient.
         print(f"Page {page.page_number}: OCR required")
-
-        # OCR добавим следующим шагом
 
     @staticmethod
     def _hash_file(path: Path) -> str:

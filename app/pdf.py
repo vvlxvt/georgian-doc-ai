@@ -1,6 +1,7 @@
-# app/pdf.py
-
+import hashlib
+from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 
 import fitz
 
@@ -15,35 +16,35 @@ class PDFPage:
 class PDFReader:
 
     def __init__(self, path: str):
-        self.path = path
+        self.path = str(Path(path).resolve())
 
-    def pages(self) -> list[PDFPage]:
-        document = fitz.open(self.path)
+    def pages(self) -> Iterator[PDFPage]:
+        with fitz.open(self.path) as doc:
+            for page_index in range(len(doc)):
+                page = doc.load_page(page_index)
 
-        result = []
+                text = page.get_text("text") or ""
 
-        for page_number, page in enumerate(document, start=1):
-            text = page.get_text("text").strip()
-
-            result.append(
-                PDFPage(
-                    page_number=page_number,
-                    text=text,
-                    content_hash=self._hash_page(page),
+                pix = page.get_pixmap(
+                    matrix=fitz.Matrix(1, 1),
+                    alpha=False,
                 )
+
+                content_hash = hashlib.sha256(pix.tobytes("png")).hexdigest()
+
+                yield PDFPage(
+                    page_number=page_index + 1,
+                    text=text,
+                    content_hash=content_hash,
+                )
+
+    def render_page(self, page_number: int) -> bytes:
+        with fitz.open(self.path) as doc:
+            page = doc.load_page(page_number - 1)
+
+            pix = page.get_pixmap(
+                matrix=fitz.Matrix(2, 2),
+                alpha=False,
             )
 
-        document.close()
-
-        return result
-
-    @staticmethod
-    def _hash_page(page) -> str:
-        import hashlib
-
-        pix = page.get_pixmap(
-            matrix=fitz.Matrix(1, 1),
-            alpha=False,
-        )
-
-        return hashlib.sha256(pix.tobytes("png")).hexdigest()
+            return pix.tobytes("png")
