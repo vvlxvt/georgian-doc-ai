@@ -3,7 +3,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-import fitz
+import pymupdf
 
 
 @dataclass
@@ -19,7 +19,7 @@ class PDFReader:
         self.path = str(Path(path).resolve())
 
     def pages(self) -> Iterator[PDFPage]:
-        with fitz.open(self.path) as doc:
+        with pymupdf.open(self.path) as doc:
             for page_index in range(len(doc)):
                 page = doc.load_page(page_index)
 
@@ -39,7 +39,7 @@ class PDFReader:
                 )
 
     def render_page(self, page_number: int) -> bytes:
-        with fitz.open(self.path) as doc:
+        with pymupdf.open(self.path) as doc:
             page = doc.load_page(page_number - 1)
 
             pix = page.get_pixmap(
