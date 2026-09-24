@@ -1,3 +1,4 @@
+import hashlib
 import tempfile
 from pathlib import Path
 
@@ -102,62 +103,37 @@ class DocumentPipeline:
         try:
             image_bytes = reader.render_page(page.page_number)
 
-            with tempfile.NamedTemporaryFile(
-                suffix=".png",
-            ) as temp_file:
-                temp_file.write(image_bytes)
-                temp_file.flush()
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir) / "page.png"
+                temp_path.write_bytes(image_bytes)
 
                 text = self.ocr_processor.recognize(
-                    temp_file.name,
+                    str(temp_path),
                 )
 
-        except Exception as exc:
-            error = f"OCR failed: {exc}"
+        except Exception:
+            if not text.strip():
+                error = "OCR returned empty text"
 
-            if existing_page:
-                existing_page.status = PageStatus.OCR_FAILED
-                existing_page.extraction_method = "tesseract"
-                existing_page.error = error
-            else:
-                db_page = DocumentPage(
-                    document_id=document.id,
-                    page_number=page.page_number,
-                    content_hash=page.content_hash,
-                    status=PageStatus.OCR_FAILED,
-                    extraction_method="tesseract",
-                    error=error,
-                )
-                self.session.add(db_page)
+                if existing_page:
+                    existing_page.status = PageStatus.OCR_FAILED
+                    existing_page.extraction_method = "tesseract"
+                    existing_page.error = error
+                else:
+                    db_page = DocumentPage(
+                        document_id=document.id,
+                        page_number=page.page_number,
+                        content_hash=page.content_hash,
+                        status=PageStatus.OCR_FAILED,
+                        extraction_method="tesseract",
+                        error=error,
+                    )
+                    self.session.add(db_page)
 
-            self.session.commit()
+                self.session.commit()
 
-            print(f"Page {page.page_number}: {error}")
-            return
-
-        # OCR completed but returned no text.
-        if not text:
-            error = "OCR returned empty text"
-
-            if existing_page:
-                existing_page.status = PageStatus.OCR_FAILED
-                existing_page.extraction_method = "tesseract"
-                existing_page.error = error
-            else:
-                db_page = DocumentPage(
-                    document_id=document.id,
-                    page_number=page.page_number,
-                    content_hash=page.content_hash,
-                    status=PageStatus.OCR_FAILED,
-                    extraction_method="tesseract",
-                    error=error,
-                )
-                self.session.add(db_page)
-
-            self.session.commit()
-
-            print(f"Page {page.page_number}: {error}")
-            return
+                print(f"Page {page.page_number}: {error}")
+                return
 
         # OCR completed successfully.
         if existing_page:
@@ -183,9 +159,6 @@ class DocumentPipeline:
 
     @staticmethod
     def _hash_file(path: Path) -> str:
-
-        import hashlib
-
         hasher = hashlib.sha256()
 
         with path.open("rb") as file:
