@@ -5,7 +5,7 @@ from app.models import Document, DocumentPage, PageStatus
 from app.ocr import TesseractOCREngine
 from app.pipeline import DocumentPipeline
 
-PDF_PATH = Path("data/input/georgian_scan.pdf")
+PDF_PATH = Path("data/input/bad_text.pdf")
 
 
 def main():

@@ -5,7 +5,7 @@ from app.models import Document, DocumentPage, PageStatus
 from app.ocr import TesseractOCREngine
 from app.pipeline import DocumentPipeline
 
-PDF_PATH = Path("data/input/georgian_scan_ocr.pdf")
+PDF_PATH = Path("data/input/bad_text.pdf")
 
 
 def main():
@@ -53,7 +53,9 @@ def main():
             print(f"Method: {page.extraction_method}")
             print(page.text[:500])
 
-        assert all(page.status == PageStatus.PARSED for page in ocr_pages)
+        assert all(page.extraction_method == "tesseract" for page in ocr_pages)
+
+        assert all(page.text for page in ocr_pages)
 
         print("\nTest passed.")
 
