@@ -5,6 +5,7 @@ from pathlib import Path
 from app.models import Document, DocumentPage, PageStatus
 from app.ocr import OCRProcessor
 from app.pdf import PDFReader
+from app.text import TextNormalizer
 
 MIN_TEXT_LENGTH = 20
 
@@ -15,9 +16,11 @@ class DocumentPipeline:
         self,
         session,
         ocr_processor: OCRProcessor,
+        text_normalizer: TextNormalizer,
     ):
         self.session = session
         self.ocr_processor = ocr_processor
+        self.text_normalizer = text_normalizer
 
     def process(self, path: str) -> str:
         path = Path(path)
@@ -79,7 +82,7 @@ class DocumentPipeline:
                 existing_page.content_hash = page.content_hash
                 existing_page.status = PageStatus.PARSED
                 existing_page.extraction_method = "native"
-                existing_page.text = page.text
+                existing_page.text = self.text_normalizer.normalize(page.text)
                 existing_page.error = None
             else:
                 db_page = DocumentPage(
@@ -88,7 +91,7 @@ class DocumentPipeline:
                     content_hash=page.content_hash,
                     status=PageStatus.PARSED,
                     extraction_method="native",
-                    text=page.text,
+                    text=self.text_normalizer.normalize(page.text),
                 )
                 self.session.add(db_page)
 
@@ -110,6 +113,7 @@ class DocumentPipeline:
                 text = self.ocr_processor.recognize(
                     str(temp_path),
                 )
+                text = self.text_normalizer.normalize(text)
 
         except Exception:
             if not text.strip():
