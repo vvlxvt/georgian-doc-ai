@@ -1,10 +1,10 @@
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models import DocumentChunk
 
 
 class DocumentChunkRepository:
-
     def __init__(self, session: Session):
         self.session = session
 
@@ -45,3 +45,21 @@ class DocumentChunkRepository:
             db_chunks.append(db_chunk)
 
         return db_chunks
+
+    def get_by_page(
+        self,
+        page_id: str,
+    ) -> list[DocumentChunk]:
+        return self.session.scalars(
+            select(DocumentChunk)
+            .where(DocumentChunk.page_id == page_id)
+            .order_by(DocumentChunk.chunk_index)
+        ).all()
+
+    def delete_by_page(
+        self,
+        page_id: str,
+    ) -> None:
+        self.session.execute(
+            delete(DocumentChunk).where(DocumentChunk.page_id == page_id)
+        )
