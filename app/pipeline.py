@@ -2,9 +2,11 @@ import hashlib
 import tempfile
 from pathlib import Path
 
+from app.chunking import TextChunker
 from app.models import Document, DocumentPage, PageStatus
 from app.ocr import OCRProcessor
 from app.pdf import PDFReader
+from app.repositories import DocumentChunkRepository
 from app.text import TextNormalizer
 
 MIN_TEXT_LENGTH = 20
@@ -17,10 +19,13 @@ class DocumentPipeline:
         session,
         ocr_processor: OCRProcessor,
         text_normalizer: TextNormalizer,
+        text_chunker: TextChunker,
     ):
         self.session = session
         self.ocr_processor = ocr_processor
         self.text_normalizer = text_normalizer
+        self.text_chunker = text_chunker
+        self.chunk_repository = DocumentChunkRepository(session)
 
     def process(self, path: str) -> str:
         path = Path(path)
@@ -47,6 +52,7 @@ class DocumentPipeline:
             )
 
         return document.id
+    
 
     def _process_page(
         self,
@@ -77,13 +83,18 @@ class DocumentPipeline:
             return
 
         # Native text extraction succeeded.
-        if len(page.text) >= MIN_TEXT_LENGTH:
+        text = self.text_normalizer.normalize(page.text)
+
+        if not text:
             if existing_page:
                 existing_page.content_hash = page.content_hash
                 existing_page.status = PageStatus.PARSED
                 existing_page.extraction_method = "native"
-                existing_page.text = self.text_normalizer.normalize(page.text)
+                existing_page.text = text
                 existing_page.error = None
+
+                db_page = existing_page
+
             else:
                 db_page = DocumentPage(
                     document_id=document.id,
@@ -91,13 +102,33 @@ class DocumentPipeline:
                     content_hash=page.content_hash,
                     status=PageStatus.PARSED,
                     extraction_method="native",
-                    text=self.text_normalizer.normalize(page.text),
+                    text=text,
                 )
+
                 self.session.add(db_page)
+
+            self.session.flush()
+
+            chunks = self.text_chunker.chunk(
+                text=text,
+                page_number=page.page_number,
+            )
+
+            self.chunk_repository.delete_by_page(db_page.id)
+
+            self.chunk_repository.create_many(
+                page_id=db_page.id,
+                page_number=page.page_number,
+                chunks=chunks,
+            )
 
             self.session.commit()
 
-            print(f"Page {page.page_number}: native text")
+            print(
+                f"Page {page.page_number}: "
+                f"native text, {len(chunks)} chunks"
+            )
+
             return
 
         # Native text extraction was insufficient.
@@ -119,25 +150,25 @@ class DocumentPipeline:
             if not text.strip():
                 error = "OCR returned empty text"
 
-                if existing_page:
-                    existing_page.status = PageStatus.OCR_FAILED
-                    existing_page.extraction_method = "tesseract"
-                    existing_page.error = error
-                else:
-                    db_page = DocumentPage(
-                        document_id=document.id,
-                        page_number=page.page_number,
-                        content_hash=page.content_hash,
-                        status=PageStatus.OCR_FAILED,
-                        extraction_method="tesseract",
-                        error=error,
-                    )
-                    self.session.add(db_page)
+            if existing_page:
+                existing_page.status = PageStatus.OCR_FAILED
+                existing_page.extraction_method = "tesseract"
+                existing_page.error = error
+            else:
+                db_page = DocumentPage(
+                    document_id=document.id,
+                    page_number=page.page_number,
+                    content_hash=page.content_hash,
+                    status=PageStatus.OCR_FAILED,
+                    extraction_method="tesseract",
+                    error=error,
+                )
+                self.session.add(db_page)
 
-                self.session.commit()
+            self.session.commit()
 
-                print(f"Page {page.page_number}: {error}")
-                return
+            print(f"Page {page.page_number}: {error}")
+            return
 
         # OCR completed successfully.
         if existing_page:
