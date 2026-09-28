@@ -1,6 +1,4 @@
-# app/models.py
-
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import uuid4
 
@@ -33,7 +31,7 @@ class Document(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(UTC),
     )
 
     pages: Mapped[list["DocumentPage"]] = relationship(
@@ -82,4 +80,41 @@ class DocumentPage(Base):
 
     document: Mapped[Document] = relationship(
         back_populates="pages",
+    )
+
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        back_populates="page",
+        cascade="all, delete-orphan",
+    )
+
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+
+    page_id: Mapped[str] = mapped_column(
+        ForeignKey("document_pages.id"),
+        index=True,
+    )
+
+    page_number: Mapped[int] = mapped_column(Integer)
+
+    chunk_index: Mapped[int] = mapped_column(Integer)
+
+    text: Mapped[str] = mapped_column(
+        Text,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC),
+    )
+
+    page: Mapped["DocumentPage"] = relationship(
+        back_populates="chunks",
     )
