@@ -2,7 +2,7 @@ from app.chunking import TextChunker
 
 
 def test_empty_text():
-    chunker = TextChunker(max_length=100)
+    chunker = TextChunker(max_length=101)
 
     result = chunker.chunk("", page_number=1)
 
@@ -10,7 +10,7 @@ def test_empty_text():
 
 
 def test_single_paragraph():
-    chunker = TextChunker(max_length=100)
+    chunker = TextChunker(max_length=101)
 
     result = chunker.chunk(
         "This is a test paragraph.",
@@ -26,20 +26,14 @@ def test_single_paragraph():
 def test_multiple_paragraphs():
     chunker = TextChunker(max_length=100)
 
-    text = (
-        "First paragraph.\n\n"
-        "Second paragraph.\n\n"
-        "Third paragraph."
-    )
+    text = "First paragraph.\n\n" "Second paragraph.\n\n" "Third paragraph."
 
     result = chunker.chunk(text, page_number=1)
 
     assert len(result) == 1
 
     assert result[0].text == (
-        "First paragraph.\n\n"
-        "Second paragraph.\n\n"
-        "Third paragraph."
+        "First paragraph.\n\n" "Second paragraph.\n\n" "Third paragraph."
     )
 
 
@@ -81,19 +75,53 @@ def test_large_paragraph_is_split_by_sentences():
 def test_multiple_paragraphs_split_by_length():
     chunker = TextChunker(max_length=35)
 
-    text = (
-        "First paragraph.\n\n"
-        "Second paragraph.\n\n"
-        "Third paragraph."
-    )
+    text = "First paragraph.\n\n" "Second paragraph.\n\n" "Third paragraph."
 
     result = chunker.chunk(text, page_number=1)
 
     assert len(result) == 2
 
-    assert result[0].text == (
-        "First paragraph.\n\n"
-        "Second paragraph."
-    )
+    assert result[0].text == ("First paragraph.\n\n" "Second paragraph.")
 
     assert result[1].text == "Third paragraph."
+
+
+def test_overlap():
+    text = (
+        "Alpha sentence is here. "
+        "Bravo sentence is here. "
+        "Charlie sentence is here. "
+        "Delta sentence is here."
+    )
+
+    chunker = TextChunker(
+        max_length=50,
+        overlap=5,
+    )
+
+    result = chunker.chunk(text, page_number=1)
+
+    assert len(result) == 3
+
+    assert result[0].text == ("Alpha sentence is here. Bravo sentence is here.")
+
+    assert result[1].text == ("Bravo sentence is here. Charlie sentence is here.")
+
+    assert result[2].text == ("Charlie sentence is here. Delta sentence is here.")
+
+    def test_long_sentence_is_split_by_words():
+        text = (
+            "This is a very long sentence containing many words "
+            "that should be split into several chunks because "
+            "it is longer than the maximum allowed chunk length."
+        )
+
+        chunker = TextChunker(
+            max_length=50,
+            overlap=0,
+        )
+
+        result = chunker.chunk(text, page_number=1)
+
+        assert len(result) > 1
+        assert all(len(chunk.text) <= 50 for chunk in result)
