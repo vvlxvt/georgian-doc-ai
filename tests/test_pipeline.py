@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from app.models import Document, DocumentPage, PageStatus
 from app.pipeline import DocumentPipeline
 
@@ -56,8 +54,7 @@ def create_pipeline(
 def test_process_native_text(session, monkeypatch):
     page = FakePDFPage(
         text=(
-            "This is a sufficiently long native text "
-            "extracted from the PDF document."
+            "This is a sufficiently long native text extracted from the PDF document."
         ),
     )
 
@@ -98,8 +95,7 @@ def test_process_native_text(session, monkeypatch):
     assert db_page.status == PageStatus.PARSED
     assert db_page.extraction_method == "native"
     assert db_page.text == (
-        "This is a sufficiently long native text "
-        "extracted from the PDF document."
+        "This is a sufficiently long native text extracted from the PDF document."
     )
 
     assert len(db_page.chunks) > 0
@@ -118,8 +114,7 @@ def test_process_page_with_ocr(session):
         session,
         FakeOCR(
             text=(
-                "ეს არის საკმარისად გრძელი ტექსტი, "
-                "რომელიც მიღებულია OCR-ის საშუალებით."
+                "ეს არის საკმარისად გრძელი ტექსტი, რომელიც მიღებულია OCR-ის საშუალებით."
             ),
         ),
     )
@@ -149,8 +144,7 @@ def test_process_page_with_ocr(session):
     assert db_page.status == PageStatus.OCR
     assert db_page.extraction_method == "tesseract"
     assert db_page.text == (
-        "ეს არის საკმარისად გრძელი ტექსტი, "
-        "რომელიც მიღებულია OCR-ის საშუალებით."
+        "ეს არის საკმარისად გრძელი ტექსტი, რომელიც მიღებულია OCR-ის საშუალებით."
     )
 
     assert len(db_page.chunks) > 0
@@ -203,8 +197,7 @@ def test_process_page_when_ocr_fails(session):
 def test_process_page_skips_already_processed_page(session):
     page = FakePDFPage(
         text=(
-            "This is a sufficiently long native text "
-            "extracted from the PDF document."
+            "This is a sufficiently long native text extracted from the PDF document."
         ),
         content_hash="same-page-hash",
     )
