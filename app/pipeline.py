@@ -159,11 +159,15 @@ class DocumentPipeline:
 
         if len(page.text) >= MIN_TEXT_LENGTH:
             page.content_hash = self._hash_text(page.text)
+
             if self._is_already_processed(
                 existing_page=existing_page,
                 page=page,
             ):
-                print(f"Page {page.page_number}: " "skipped (already processed)")
+                print(
+                    f"Page {page.page_number}: "
+                    "skipped (already processed)"
+                )
                 return
 
             self._save_page_text(
@@ -180,6 +184,17 @@ class DocumentPipeline:
         try:
             image_bytes = reader.render_page(page.page_number)
             page.content_hash = self._hash_bytes(image_bytes)
+
+            if self._is_already_processed(
+                existing_page=existing_page,
+                page=page,
+            ):
+                print(
+                    f"Page {page.page_number}: "
+                    "skipped (already processed)"
+                )
+                return
+
         except Exception as exc:
             self._save_ocr_failure(
                 document=document,

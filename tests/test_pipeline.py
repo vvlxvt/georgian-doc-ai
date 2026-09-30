@@ -242,3 +242,47 @@ def test_process_page_skips_already_processed_page(session):
     session.refresh(db_page)
 
     assert len(db_page.chunks) == first_chunk_count
+
+
+def test_ocr_uses_image_hash(session):
+    page = FakePDFPage(
+        text="",
+        content_hash="native-empty-hash",
+    )
+
+    reader = FakePDFReader([page])
+
+    pipeline = create_pipeline(
+        session,
+        FakeOCR(
+            text="ეს არის OCR ტექსტი საკმარისი სიგრძის.",
+        ),
+    )
+
+    document = Document(
+        filename="test.pdf",
+        file_hash="document-hash",
+    )
+    session.add(document)
+    session.commit()
+
+    pipeline._process_page(
+        document=document,
+        page=page,
+        reader=reader,
+    )
+
+    db_page = (
+        session.query(DocumentPage)
+        .filter_by(
+            document_id=document.id,
+            page_number=1,
+        )
+        .one()
+    )
+
+    assert db_page.status == PageStatus.OCR
+    assert db_page.content_hash != "native-empty-hash"
+
+
+
