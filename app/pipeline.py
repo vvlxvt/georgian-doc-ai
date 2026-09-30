@@ -55,16 +55,11 @@ class DocumentPipeline:
             )
         )
 
-
     def process(self, path: str) -> str:
         path = Path(path)
         file_hash = self._hash_file(path)
 
-        document = (
-            self.session.query(Document)
-            .filter_by(file_hash=file_hash)
-            .first()
-        )
+        document = self.session.query(Document).filter_by(file_hash=file_hash).first()
 
         if not document:
             document = Document(
@@ -126,10 +121,7 @@ class DocumentPipeline:
 
         self.session.commit()
 
-        print(
-            f"Page {page.page_number}: "
-            f"{extraction_method}, {len(chunks)} chunks"
-        )
+        print(f"Page {page.page_number}: " f"{extraction_method}, {len(chunks)} chunks")
 
     def _get_or_create_page(
         self,
@@ -166,14 +158,12 @@ class DocumentPipeline:
         )
 
         if len(page.text) >= MIN_TEXT_LENGTH:
+            page.content_hash = self._hash_text(page.text)
             if self._is_already_processed(
                 existing_page=existing_page,
                 page=page,
             ):
-                print(
-                    f"Page {page.page_number}: "
-                    "skipped (already processed)"
-                )
+                print(f"Page {page.page_number}: " "skipped (already processed)")
                 return
 
             self._save_page_text(
@@ -187,10 +177,21 @@ class DocumentPipeline:
 
         print(f"Page {page.page_number}: OCR required")
 
+        try:
+            image_bytes = reader.render_page(page.page_number)
+            page.content_hash = self._hash_bytes(image_bytes)
+        except Exception as exc:
+            self._save_ocr_failure(
+                document=document,
+                page=page,
+                error=f"Page rendering failed: {exc}",
+            )
+            return
+
         text = self._run_ocr(
             document=document,
             page=page,
-            reader=reader,
+            image_bytes=image_bytes,
         )
 
         if text is None:
@@ -208,11 +209,9 @@ class DocumentPipeline:
         self,
         document: Document,
         page: PDFPage,
-        reader: PDFReader,
+        image_bytes: bytes,
     ) -> str | None:
         try:
-            image_bytes = reader.render_page(page.page_number)
-
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_path = Path(temp_dir) / "page.png"
                 temp_path.write_bytes(image_bytes)
@@ -258,6 +257,14 @@ class DocumentPipeline:
         self.session.commit()
 
         print(f"Page {page.page_number}: {error}")
+
+    def _hash_text(self, text: str) -> str:
+        normalized_text = self.text_normalizer.normalize(text)
+        return self._hash_bytes(normalized_text.encode("utf-8"))
+
+    @staticmethod
+    def _hash_bytes(data: bytes) -> str:
+        return hashlib.sha256(data).hexdigest()
 
     @staticmethod
     def _hash_file(path: Path) -> str:
