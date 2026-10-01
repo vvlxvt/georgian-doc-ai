@@ -11,6 +11,7 @@ class PDFPage:
     page_number: int
     text: str
     content_hash: str
+    _doc_path: str
 
 
 class PDFReader:
@@ -48,3 +49,7 @@ class PDFReader:
             )
 
             return pix.tobytes("png")
+
+    @staticmethod
+    def hash_bytes(data: bytes) -> str:
+        return hashlib.sha256(data).hexdigest()

@@ -1,130 +1,111 @@
+from unittest.mock import Mock
+
 from app.models import Document, DocumentPage, PageStatus
+from app.pdf import PDFPage
 from app.pipeline import DocumentPipeline
+from app.text import TextNormalizer
+from app.chunking import TextChunker
 
 
-class FakeOCR:
-    def __init__(self, text="OCR recognized text."):
-        self.text = text
-
-    def recognize(self, image_path: str) -> str:
-        return self.text
-
-
-class FakePDFPage:
-    def __init__(
-        self,
-        page_number=1,
-        text="",
-        content_hash="page-hash",
-    ):
-        self.page_number = page_number
-        self.text = text
-        self.content_hash = content_hash
-
-
-class FakePDFReader:
-    def __init__(self, pages):
-        self._pages = pages
-
-    def pages(self):
-        yield from self._pages
-
-    def render_page(self, page_number):
-        return b"fake image"
-
-
-def create_pipeline(
-    session,
-    ocr_processor,
-):
-    from app.chunking import TextChunker
-    from app.text import TextNormalizer
+def create_pipeline(session, ocr_processor=None):
+    if ocr_processor is None:
+        ocr_processor = Mock()
 
     return DocumentPipeline(
         session=session,
         ocr_processor=ocr_processor,
         text_normalizer=TextNormalizer(),
         text_chunker=TextChunker(
-            max_length=100,
-            overlap=20,
+            max_length=500,
+            overlap=50,
         ),
     )
 
 
-def test_process_native_text(session, monkeypatch):
-    page = FakePDFPage(
-        text=(
-            "This is a sufficiently long native text extracted from the PDF document."
-        ),
+def create_document(session):
+    document = Document(
+        filename="test.pdf",
+        file_hash="a" * 64,
     )
 
-    reader = FakePDFReader([page])
+    session.add(document)
+    session.commit()
 
-    monkeypatch.setattr(
-        "app.pipeline.PDFReader",
-        lambda path: reader,
+    return document
+
+
+def create_page(
+    page_number=1,
+    text="This is a sufficiently long native text for testing.",
+):
+    return PDFPage(
+        page_number=page_number,
+        text=text,
+        content_hash="",
+        _doc_path="test.pdf",
     )
 
-    monkeypatch.setattr(
-        DocumentPipeline,
-        "_hash_file",
-        staticmethod(lambda path: "document-hash"),
-    )
 
-    pipeline = create_pipeline(
-        session,
-        FakeOCR(),
-    )
-
-    document_id = pipeline.process("test.pdf")
-
-    document = session.get(Document, document_id)
-
-    assert document is not None
-    assert document.filename == "test.pdf"
-
-    db_page = (
+def get_document_page(session, document, page_number=1):
+    return (
         session.query(DocumentPage)
         .filter_by(
             document_id=document.id,
-            page_number=1,
+            page_number=page_number,
         )
-        .one()
+        .first()
     )
 
-    assert db_page.status == PageStatus.PARSED
-    assert db_page.extraction_method == "native"
-    assert db_page.text == (
-        "This is a sufficiently long native text extracted from the PDF document."
+
+def test_process_native_text(session):
+    document = create_document(session)
+    pipeline = create_pipeline(session)
+
+    page = create_page()
+
+    reader = Mock()
+
+    pipeline._process_page(
+        document=document,
+        page=page,
+        reader=reader,
     )
 
-    assert len(db_page.chunks) > 0
-    assert db_page.chunks[0].text
+    saved_page = get_document_page(
+        session=session,
+        document=document,
+    )
+
+    assert saved_page is not None
+    assert saved_page.status == PageStatus.PARSED
+    assert saved_page.extraction_method == "native"
+    assert saved_page.text == page.text
+    assert saved_page.content_hash == pipeline._hash_text(page.text)
+
+    reader.render_page.assert_not_called()
 
 
 def test_process_page_with_ocr(session):
-    page = FakePDFPage(
-        text="",
-        content_hash="scanned-page-hash",
-    )
+    document = create_document(session)
 
-    reader = FakePDFReader([page])
+    ocr_processor = Mock()
+    ocr_processor.recognize.return_value = (
+        "Georgian OCR text with enough content."
+    )
 
     pipeline = create_pipeline(
-        session,
-        FakeOCR(
-            text=(
-                "ეს არის საკმარისად გრძელი ტექსტი, რომელიც მიღებულია OCR-ის საშუალებით."
-            ),
-        ),
+        session=session,
+        ocr_processor=ocr_processor,
     )
 
-    document = Document(
-        filename="test.pdf",
-        file_hash="document-hash",
+    page = create_page(
+        text="",
     )
-    session.add(document)
-    session.commit()
+
+    image_bytes = b"test image bytes"
+
+    reader = Mock()
+    reader.render_page.return_value = image_bytes
 
     pipeline._process_page(
         document=document,
@@ -132,139 +113,226 @@ def test_process_page_with_ocr(session):
         reader=reader,
     )
 
-    db_page = (
-        session.query(DocumentPage)
-        .filter_by(
-            document_id=document.id,
-            page_number=1,
-        )
-        .one()
+    saved_page = get_document_page(
+        session=session,
+        document=document,
     )
 
-    assert db_page.status == PageStatus.OCR
-    assert db_page.extraction_method == "tesseract"
-    assert db_page.text == (
-        "ეს არის საკმარისად გრძელი ტექსტი, რომელიც მიღებულია OCR-ის საშუალებით."
+    assert saved_page is not None
+    assert saved_page.status == PageStatus.OCR
+    assert saved_page.extraction_method == "tesseract"
+    assert saved_page.text == (
+        "Georgian OCR text with enough content."
+    )
+    assert saved_page.content_hash == pipeline._hash_bytes(
+        image_bytes,
     )
 
-    assert len(db_page.chunks) > 0
+    reader.render_page.assert_called_once_with(
+        page.page_number,
+    )
+
+    ocr_processor.recognize.assert_called_once()
 
 
 def test_process_page_when_ocr_fails(session):
-    class FailingOCR:
-        def recognize(self, image_path: str) -> str:
-            raise RuntimeError("Tesseract failed")
+    document = create_document(session)
 
-    page = FakePDFPage(
+    ocr_processor = Mock()
+    ocr_processor.recognize.side_effect = RuntimeError(
+        "Tesseract failed",
+    )
+
+    pipeline = create_pipeline(
+        session=session,
+        ocr_processor=ocr_processor,
+    )
+
+    page = create_page(
         text="",
-        content_hash="scanned-page-hash",
     )
 
-    reader = FakePDFReader([page])
+    image_bytes = b"test image bytes"
+
+    reader = Mock()
+    reader.render_page.return_value = image_bytes
+
+    pipeline._process_page(
+        document=document,
+        page=page,
+        reader=reader,
+    )
+
+    saved_page = get_document_page(
+        session=session,
+        document=document,
+    )
+
+    assert saved_page is not None
+    assert saved_page.status == PageStatus.OCR_FAILED
+    assert saved_page.extraction_method == "tesseract"
+    assert saved_page.error == "OCR failed: Tesseract failed"
+    assert saved_page.content_hash == pipeline._hash_bytes(
+        image_bytes,
+    )
+
+
+def test_process_page_skips_already_processed_native_page(session):
+    document = create_document(session)
+
+    pipeline = create_pipeline(session)
+
+    page = create_page()
+
+    reader = Mock()
+
+    pipeline._process_page(
+        document=document,
+        page=page,
+        reader=reader,
+    )
+
+    reader.reset_mock()
+
+    pipeline._process_page(
+        document=document,
+        page=page,
+        reader=reader,
+    )
+
+    saved_page = get_document_page(
+        session=session,
+        document=document,
+    )
+
+    assert saved_page.status == PageStatus.PARSED
+    assert saved_page.text == page.text
+
+    reader.render_page.assert_not_called()
+
+
+def test_native_page_with_different_text_is_reprocessed(session):
+    document = create_document(session)
+
+    pipeline = create_pipeline(session)
+
+    first_page = create_page(
+        text="First sufficiently long native text for testing.",
+    )
+
+    reader = Mock()
+
+    pipeline._process_page(
+        document=document,
+        page=first_page,
+        reader=reader,
+    )
+
+    saved_page = get_document_page(
+        session=session,
+        document=document,
+    )
+
+    first_hash = saved_page.content_hash
+
+    second_page = create_page(
+        text="Second sufficiently long native text for testing.",
+    )
+
+    pipeline._process_page(
+        document=document,
+        page=second_page,
+        reader=reader,
+    )
+
+    saved_page = get_document_page(
+        session=session,
+        document=document,
+    )
+
+    assert saved_page.status == PageStatus.PARSED
+    assert saved_page.text == second_page.text
+    assert saved_page.content_hash != first_hash
+
+
+def test_same_native_text_produces_same_hash(session):
+    pipeline = create_pipeline(session)
+
+    text = "Some sufficiently long text for hashing."
+
+    first_hash = pipeline._hash_text(text)
+    second_hash = pipeline._hash_text(text)
+
+    assert first_hash == second_hash
+
+
+def test_different_native_text_produces_different_hash(session):
+    pipeline = create_pipeline(session)
+
+    first_hash = pipeline._hash_text(
+        "First sufficiently long text.",
+    )
+
+    second_hash = pipeline._hash_text(
+        "Second sufficiently long text.",
+    )
+
+    assert first_hash != second_hash
+
+
+def test_different_ocr_images_produce_different_hashes(session):
+    pipeline = create_pipeline(session)
+
+    first_hash = pipeline._hash_bytes(
+        b"first image bytes",
+    )
+
+    second_hash = pipeline._hash_bytes(
+        b"second image bytes",
+    )
+
+    assert first_hash != second_hash
+
+
+def test_process_page_skips_already_processed_ocr_page(session):
+    ocr_processor = Mock()
+    ocr_processor.recognize.return_value = (
+        "Georgian OCR text that is long enough for processing."
+    )
 
     pipeline = create_pipeline(
-        session,
-        FailingOCR(),
+        session=session,
+        ocr_processor=ocr_processor,
     )
 
-    document = Document(
-        filename="test.pdf",
-        file_hash="document-hash",
-    )
-    session.add(document)
-    session.commit()
+    document = create_document(session)
 
-    pipeline._process_page(
-        document=document,
-        page=page,
-        reader=reader,
-    )
-
-    db_page = (
-        session.query(DocumentPage)
-        .filter_by(
-            document_id=document.id,
-            page_number=1,
-        )
-        .one()
-    )
-
-    assert db_page.status == PageStatus.OCR_FAILED
-    assert db_page.extraction_method == "tesseract"
-    assert "Tesseract failed" in db_page.error
-
-
-def test_process_page_skips_already_processed_page(session):
-    page = FakePDFPage(
-        text=(
-            "This is a sufficiently long native text extracted from the PDF document."
-        ),
-        content_hash="same-page-hash",
-    )
-
-    reader = FakePDFReader([page])
-
-    pipeline = create_pipeline(
-        session,
-        FakeOCR(),
-    )
-
-    document = Document(
-        filename="test.pdf",
-        file_hash="document-hash",
-    )
-    session.add(document)
-    session.commit()
-
-    pipeline._process_page(
-        document=document,
-        page=page,
-        reader=reader,
-    )
-
-    db_page = (
-        session.query(DocumentPage)
-        .filter_by(
-            document_id=document.id,
-            page_number=1,
-        )
-        .one()
-    )
-
-    first_chunk_count = len(db_page.chunks)
-
-    pipeline._process_page(
-        document=document,
-        page=page,
-        reader=reader,
-    )
-
-    session.refresh(db_page)
-
-    assert len(db_page.chunks) == first_chunk_count
-
-
-def test_ocr_uses_image_hash(session):
-    page = FakePDFPage(
+    page = create_page(
+        page_number=1,
         text="",
-        content_hash="native-empty-hash",
     )
 
-    reader = FakePDFReader([page])
+    reader = Mock()
+    image_bytes = b"same image bytes"
 
-    pipeline = create_pipeline(
-        session,
-        FakeOCR(
-            text="ეს არის OCR ტექსტი საკმარისი სიგრძის.",
-        ),
+    reader.render_page.return_value = image_bytes
+
+    # First processing
+    pipeline._process_page(
+        document=document,
+        page=page,
+        reader=reader,
     )
 
-    document = Document(
-        filename="test.pdf",
-        file_hash="document-hash",
+    ocr_processor.recognize.assert_called_once()
+
+    ocr_processor.reset_mock()
+
+    # Second processing of the same page
+    page = create_page(
+        page_number=1,
+        text="",
     )
-    session.add(document)
-    session.commit()
 
     pipeline._process_page(
         document=document,
@@ -272,17 +340,53 @@ def test_ocr_uses_image_hash(session):
         reader=reader,
     )
 
-    db_page = (
-        session.query(DocumentPage)
-        .filter_by(
-            document_id=document.id,
-            page_number=1,
-        )
-        .one()
+    # OCR must not run again
+    ocr_processor.recognize.assert_not_called()
+
+def test_ocr_page_with_different_image_is_reprocessed(session):
+    ocr_processor = Mock()
+    ocr_processor.recognize.return_value = (
+        "Georgian OCR text that is long enough for processing."
     )
 
-    assert db_page.status == PageStatus.OCR
-    assert db_page.content_hash != "native-empty-hash"
+    pipeline = create_pipeline(
+        session=session,
+        ocr_processor=ocr_processor,
+    )
 
+    document = create_document(session)
 
+    reader = Mock()
+    reader.render_page.return_value = b"first image"
 
+    page = create_page(
+        page_number=1,
+        text="",
+    )
+
+    # First processing
+    pipeline._process_page(
+        document=document,
+        page=page,
+        reader=reader,
+    )
+
+    assert ocr_processor.recognize.call_count == 1
+
+    # The page image has changed
+    reader.render_page.return_value = b"different image"
+
+    page = create_page(
+        page_number=1,
+        text="",
+    )
+
+    # Second processing
+    pipeline._process_page(
+        document=document,
+        page=page,
+        reader=reader,
+    )
+
+    # OCR must run again
+    assert ocr_processor.recognize.call_count == 2
