@@ -1,4 +1,4 @@
-from app.embeddings import EmbeddingService
+from app.embeddings import EmbeddingService, HuggingFaceEmbeddingService
 
 
 def test_embedding_service_is_abstract():
@@ -7,9 +7,7 @@ def test_embedding_service_is_abstract():
     except TypeError:
         return
 
-    raise AssertionError(
-        "EmbeddingService should not be instantiated directly"
-    )
+    raise AssertionError("EmbeddingService should not be instantiated directly")
 
 
 def test_embedding_service_requires_embed():
@@ -22,9 +20,7 @@ def test_embedding_service_requires_embed():
     except TypeError:
         return
 
-    raise AssertionError(
-        "EmbeddingService must require embed() implementation"
-    )
+    raise AssertionError("EmbeddingService must require embed() implementation")
 
 
 def test_embedding_service_requires_embed_many():
@@ -37,19 +33,15 @@ def test_embedding_service_requires_embed_many():
     except TypeError:
         return
 
-    raise AssertionError(
-        "EmbeddingService must require embed_many() implementation"
-    )
+    raise AssertionError("EmbeddingService must require embed_many() implementation")
+
 
 class FakeEmbeddingService(EmbeddingService):
     def embed(self, text: str) -> list[float]:
         return [1.0, 2.0, 3.0]
 
     def embed_many(self, texts: list[str]) -> list[list[float]]:
-        return [
-            [1.0, 2.0, 3.0]
-            for _ in texts
-        ]
+        return [[1.0, 2.0, 3.0] for _ in texts]
 
 
 def test_embed_returns_vector():
@@ -79,3 +71,30 @@ def test_embed_many_returns_vector_for_each_text():
         assert isinstance(vector, list)
         assert all(isinstance(value, float) for value in vector)
         assert len(vector) == 3
+
+
+def test_huggingface_embedding_returns_1024_dimensions():
+    service = HuggingFaceEmbeddingService()
+
+    embedding = service.embed("თბილისი საქართველოს დედაქალაქია")
+
+    assert len(embedding) == 1024
+    assert all(isinstance(value, float) for value in embedding)
+
+
+def test_huggingface_embedding_many_returns_one_vector_per_text():
+    service = HuggingFaceEmbeddingService()
+
+    texts = [
+        "თბილისი საქართველოს დედაქალაქია",
+        "ბათუმი აჭარის მთავარი ქალაქია",
+        "თბილისში მდებარეობს პარლამენტი",
+    ]
+
+    embeddings = service.embed_many(texts)
+
+    assert len(embeddings) == len(texts)
+    assert all(len(embedding) == 1024 for embedding in embeddings)
+    assert all(
+        isinstance(value, float) for embedding in embeddings for value in embedding
+    )

@@ -1,10 +1,10 @@
 from unittest.mock import Mock
 
+from app.chunking import TextChunker
 from app.models import Document, DocumentPage, PageStatus
 from app.pdf import PDFPage
 from app.pipeline import DocumentPipeline
 from app.text import TextNormalizer
-from app.chunking import TextChunker
 
 
 def create_pipeline(session, ocr_processor=None):
@@ -89,9 +89,7 @@ def test_process_page_with_ocr(session):
     document = create_document(session)
 
     ocr_processor = Mock()
-    ocr_processor.recognize.return_value = (
-        "Georgian OCR text with enough content."
-    )
+    ocr_processor.recognize.return_value = "Georgian OCR text with enough content."
 
     pipeline = create_pipeline(
         session=session,
@@ -121,9 +119,7 @@ def test_process_page_with_ocr(session):
     assert saved_page is not None
     assert saved_page.status == PageStatus.OCR
     assert saved_page.extraction_method == "tesseract"
-    assert saved_page.text == (
-        "Georgian OCR text with enough content."
-    )
+    assert saved_page.text == ("Georgian OCR text with enough content.")
     assert saved_page.content_hash == pipeline._hash_bytes(
         image_bytes,
     )
@@ -342,6 +338,7 @@ def test_process_page_skips_already_processed_ocr_page(session):
 
     # OCR must not run again
     ocr_processor.recognize.assert_not_called()
+
 
 def test_ocr_page_with_different_image_is_reprocessed(session):
     ocr_processor = Mock()

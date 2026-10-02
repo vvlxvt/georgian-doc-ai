@@ -164,10 +164,7 @@ class DocumentPipeline:
                 existing_page=existing_page,
                 page=page,
             ):
-                print(
-                    f"Page {page.page_number}: "
-                    "skipped (already processed)"
-                )
+                print(f"Page {page.page_number}: " "skipped (already processed)")
                 return
 
             self._save_page_text(
@@ -189,10 +186,7 @@ class DocumentPipeline:
                 existing_page=existing_page,
                 page=page,
             ):
-                print(
-                    f"Page {page.page_number}: "
-                    "skipped (already processed)"
-                )
+                print(f"Page {page.page_number}: " "skipped (already processed)")
                 return
 
         except Exception as exc:
