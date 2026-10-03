@@ -1,5 +1,12 @@
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    MatchValue,
+    PointStruct,
+    VectorParams,
+)
 
 from app.vector_store import VectorStore
 
@@ -77,4 +84,17 @@ class QdrantVectorStore(VectorStore):
         self.client.delete(
             collection_name=self.collection_name,
             points_selector=[vector_id],
+        )
+
+    def delete_by_page(self, page_id: str) -> None:
+        self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="page_id",
+                        match=MatchValue(value=page_id),
+                    )
+                ]
+            ),
         )
