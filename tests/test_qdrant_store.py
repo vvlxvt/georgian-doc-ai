@@ -104,3 +104,52 @@ def test_qdrant_store_delete():
     )
 
     assert results == []
+
+
+def test_delete_by_page():
+    client = QdrantClient(":memory:")
+
+    store = QdrantVectorStore(
+        client=client,
+        collection_name="test_chunks",
+        vector_size=3,
+    )
+
+    store.upsert(
+        vector_id=str(uuid4()),
+        vector=[1.0, 0.0, 0.0],
+        payload={
+            "page_id": "page-1",
+            "text": "first",
+        },
+    )
+
+    store.upsert(
+        vector_id=str(uuid4()),
+        vector=[0.0, 1.0, 0.0],
+        payload={
+            "page_id": "page-1",
+            "text": "second",
+        },
+    )
+
+    third_id = str(uuid4())
+
+    store.upsert(
+        vector_id=third_id,
+        vector=[0.0, 0.0, 1.0],
+        payload={
+            "page_id": "page-2",
+            "text": "third",
+        },
+    )
+
+    store.delete_by_page("page-1")
+
+    results = store.search(
+        vector=[0.0, 0.0, 1.0],
+        limit=10,
+    )
+
+    assert len(results) == 1
+    assert results[0]["id"] == third_id
