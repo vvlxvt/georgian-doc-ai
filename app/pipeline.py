@@ -2,12 +2,9 @@ import hashlib
 import tempfile
 from pathlib import Path
 
-from app.chunking import TextChunker
 from app.models import Document, DocumentPage, PageStatus
-from app.ocr import OCRProcessor
 from app.pdf import PDFPage, PDFReader
 from app.repositories import DocumentChunkRepository
-from app.text import TextNormalizer
 
 MIN_TEXT_LENGTH = 20
 
@@ -16,15 +13,17 @@ class DocumentPipeline:
     def __init__(
         self,
         session,
-        ocr_processor: OCRProcessor,
-        text_normalizer: TextNormalizer,
-        text_chunker: TextChunker,
+        ocr_processor,
+        text_normalizer,
+        text_chunker,
+        chunk_indexer,
     ):
         self.session = session
         self.ocr_processor = ocr_processor
         self.text_normalizer = text_normalizer
         self.text_chunker = text_chunker
         self.chunk_repository = DocumentChunkRepository(session)
+        self.chunk_indexer = chunk_indexer
 
     def _get_page(
         self,
@@ -110,6 +109,14 @@ class DocumentPipeline:
             text=text,
             page_number=page.page_number,
         )
+
+        db_chunks = self.chunk_repository.create_many(
+            page_id=db_page.id,
+            page_number=page.page_number,
+            chunks=chunks,
+        )
+
+        self.chunk_indexer.index_chunks(db_chunks)
 
         self.chunk_repository.delete_by_page(db_page.id)
 
