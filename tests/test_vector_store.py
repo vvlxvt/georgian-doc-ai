@@ -83,6 +83,14 @@ class FakeVectorStore(VectorStore):
     def delete(self, vector_id: str) -> None:
         self.items.pop(vector_id, None)
 
+    def delete_by_page(self, page_id: str) -> None:
+        self.items = {
+            vector_id: item
+            for vector_id, item in self.items.items()
+            if item["payload"].get("page_id") != page_id
+        }
+
+
 
 def test_vector_store_upsert_and_search():
     store = FakeVectorStore()
@@ -126,3 +134,40 @@ def test_vector_store_delete():
     )
 
     assert results == []
+
+
+def delete_by_page(self, page_id: str) -> None:
+    self.items = {
+        vector_id: item
+        for vector_id, item in self.items.items()
+        if item["payload"].get("page_id") != page_id
+    }
+
+
+def test_delete_by_page():
+    store = FakeVectorStore()
+
+    store.upsert(
+        "chunk-1",
+        [1.0, 0.0, 0.0],
+        {"page_id": "page-1", "text": "first"},
+    )
+
+    store.upsert(
+        "chunk-2",
+        [0.0, 1.0, 0.0],
+        {"page_id": "page-1", "text": "second"},
+    )
+
+    store.upsert(
+        "chunk-3",
+        [0.0, 0.0, 1.0],
+        {"page_id": "page-2", "text": "third"},
+    )
+
+    store.delete_by_page("page-1")
+
+    assert len(store.items) == 1
+    assert "chunk-3" in store.items
+    assert "chunk-1" not in store.items
+    assert "chunk-2" not in store.items
