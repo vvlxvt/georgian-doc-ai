@@ -22,3 +22,7 @@ class VectorStore(ABC):
     @abstractmethod
     def delete(self, vector_id: str) -> None:
         raise NotImplementedError
+
+    @abstractmethod
+    def delete_by_page(self, page_id: str) -> None:
+        raise NotImplementedError
