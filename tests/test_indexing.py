@@ -1,3 +1,4 @@
+import pytest
 from qdrant_client import QdrantClient
 
 from app.embeddings import EmbeddingService, HuggingFaceEmbeddingService
@@ -357,7 +358,6 @@ class BrokenEmbeddingService(EmbeddingService):
         return [[1.0, 0.0, 0.0]]
 
 
-import pytest
 
 
 def test_index_chunks_raises_when_embedding_count_does_not_match(
@@ -409,3 +409,79 @@ def test_index_chunks_raises_when_embedding_count_does_not_match(
         match="Number of embeddings does not match number of chunks",
     ):
         indexer.index_chunks(chunks)
+
+
+class FailingEmbeddingService(EmbeddingService):
+    def embed(self, text: str) -> list[float]:
+        raise RuntimeError("Embedding service failed")
+
+    def embed_many(self, texts: list[str]) -> list[list[float]]:
+        raise RuntimeError("Embedding service failed")
+
+    
+
+def test_index_chunks_keeps_old_vectors_when_embedding_fails(
+    session,
+):
+    document = Document(
+        filename="test.pdf",
+        file_hash="document-hash",
+    )
+    session.add(document)
+    session.flush()
+
+    page = DocumentPage(
+        document_id=document.id,
+        page_number=1,
+        content_hash="page-hash",
+        status="parsed",
+        extraction_method="native",
+        text="Test document",
+    )
+    session.add(page)
+    session.flush()
+
+    old_chunk = DocumentChunk(
+        page_id=page.id,
+        page_number=1,
+        chunk_index=0,
+        text="Old chunk",
+    )
+    session.add(old_chunk)
+    session.flush()
+
+    vector_store = FakeVectorStore()
+
+    working_indexer = ChunkIndexer(
+        embedding_service=FakeEmbeddingService(),
+        vector_store=vector_store,
+    )
+
+    working_indexer.index_chunks([old_chunk])
+
+    assert len(vector_store.items) == 1
+    assert old_chunk.id in vector_store.items
+
+    new_chunk = DocumentChunk(
+        page_id=page.id,
+        page_number=1,
+        chunk_index=0,
+        text="New chunk",
+    )
+    session.add(new_chunk)
+    session.flush()
+
+    failing_indexer = ChunkIndexer(
+        embedding_service=FailingEmbeddingService(),
+        vector_store=vector_store,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Embedding service failed",
+    ):
+        failing_indexer.index_chunks([new_chunk])
+
+    assert len(vector_store.items) == 1
+    assert old_chunk.id in vector_store.items
+    assert new_chunk.id not in vector_store.items
