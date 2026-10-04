@@ -91,7 +91,6 @@ class FakeVectorStore(VectorStore):
         }
 
 
-
 def test_vector_store_upsert_and_search():
     store = FakeVectorStore()
 

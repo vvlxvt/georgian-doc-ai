@@ -22,9 +22,7 @@ class ChunkIndexer:
         page_id = chunks[0].page_id
 
         if any(chunk.page_id != page_id for chunk in chunks):
-            raise ValueError(
-                "All chunks must belong to the same page"
-            )
+            raise ValueError("All chunks must belong to the same page")
 
         self.vector_store.delete_by_page(page_id)
 
@@ -33,9 +31,7 @@ class ChunkIndexer:
         embeddings = self.embedding_service.embed_many(texts)
 
         if len(embeddings) != len(chunks):
-            raise ValueError(
-                "Number of embeddings does not match number of chunks"
-            )
+            raise ValueError("Number of embeddings does not match number of chunks")
 
         for chunk, embedding in zip(chunks, embeddings):
             self.vector_store.upsert(

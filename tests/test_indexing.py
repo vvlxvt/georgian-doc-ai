@@ -45,7 +45,7 @@ class FakeVectorStore(VectorStore):
             vector_id: item
             for vector_id, item in self.items.items()
             if item["payload"].get("page_id") != page_id
-    }
+        }
 
 
 def test_index_chunks(
@@ -263,7 +263,8 @@ def test_index_chunks_with_real_services(session):
     assert results[0]["payload"]["page_number"] == 1
 
 
-'''повторная индексация удаляет старые vectors перед созданием новых'''
+"""повторная индексация удаляет старые vectors перед созданием новых"""
+
 
 def test_index_chunks_replaces_old_vectors(session):
     document = Document(
@@ -346,3 +347,65 @@ def test_index_chunks_replaces_old_vectors(session):
 
     for chunk in new_chunks:
         assert chunk.id in vector_store.items
+
+
+class BrokenEmbeddingService(EmbeddingService):
+    def embed(self, text: str) -> list[float]:
+        return [1.0, 0.0, 0.0]
+
+    def embed_many(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0, 0.0, 0.0]]
+
+
+import pytest
+
+
+def test_index_chunks_raises_when_embedding_count_does_not_match(
+    session,
+):
+    document = Document(
+        filename="test.pdf",
+        file_hash="document-hash",
+    )
+    session.add(document)
+    session.flush()
+
+    page = DocumentPage(
+        document_id=document.id,
+        page_number=1,
+        content_hash="page-hash",
+        status="parsed",
+        extraction_method="native",
+        text="Test document",
+    )
+    session.add(page)
+    session.flush()
+
+    chunks = [
+        DocumentChunk(
+            page_id=page.id,
+            page_number=1,
+            chunk_index=0,
+            text="Chunk 1",
+        ),
+        DocumentChunk(
+            page_id=page.id,
+            page_number=1,
+            chunk_index=1,
+            text="Chunk 2",
+        ),
+    ]
+
+    session.add_all(chunks)
+    session.flush()
+
+    indexer = ChunkIndexer(
+        embedding_service=BrokenEmbeddingService(),
+        vector_store=FakeVectorStore(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Number of embeddings does not match number of chunks",
+    ):
+        indexer.index_chunks(chunks)
