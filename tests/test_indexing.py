@@ -40,6 +40,13 @@ class FakeVectorStore(VectorStore):
     def delete(self, vector_id: str) -> None:
         self.items.pop(vector_id, None)
 
+    def delete_by_page(self, page_id: str) -> None:
+        self.items = {
+            vector_id: item
+            for vector_id, item in self.items.items()
+            if item["payload"].get("page_id") != page_id
+    }
+
 
 def test_index_chunks(
     session,
@@ -254,3 +261,88 @@ def test_index_chunks_with_real_services(session):
     assert results[0]["id"] == chunk.id
     assert results[0]["payload"]["text"] == chunk.text
     assert results[0]["payload"]["page_number"] == 1
+
+
+'''повторная индексация удаляет старые vectors перед созданием новых'''
+
+def test_index_chunks_replaces_old_vectors(session):
+    document = Document(
+        filename="test.pdf",
+        file_hash="document-hash",
+    )
+    session.add(document)
+    session.flush()
+
+    page = DocumentPage(
+        document_id=document.id,
+        page_number=1,
+        content_hash="page-hash",
+        status="parsed",
+        extraction_method="native",
+        text="Test document",
+    )
+    session.add(page)
+    session.flush()
+
+    old_chunks = [
+        DocumentChunk(
+            page_id=page.id,
+            page_number=1,
+            chunk_index=0,
+            text="Old chunk 1",
+        ),
+        DocumentChunk(
+            page_id=page.id,
+            page_number=1,
+            chunk_index=1,
+            text="Old chunk 2",
+        ),
+    ]
+
+    session.add_all(old_chunks)
+    session.flush()
+
+    vector_store = FakeVectorStore()
+
+    indexer = ChunkIndexer(
+        embedding_service=FakeEmbeddingService(),
+        vector_store=vector_store,
+    )
+
+    indexer.index_chunks(old_chunks)
+
+    assert len(vector_store.items) == 2
+
+    new_chunks = [
+        DocumentChunk(
+            page_id=page.id,
+            page_number=1,
+            chunk_index=0,
+            text="New chunk 1",
+        ),
+        DocumentChunk(
+            page_id=page.id,
+            page_number=1,
+            chunk_index=1,
+            text="New chunk 2",
+        ),
+        DocumentChunk(
+            page_id=page.id,
+            page_number=1,
+            chunk_index=2,
+            text="New chunk 3",
+        ),
+    ]
+
+    session.add_all(new_chunks)
+    session.flush()
+
+    indexer.index_chunks(new_chunks)
+
+    assert len(vector_store.items) == 3
+
+    for chunk in old_chunks:
+        assert chunk.id not in vector_store.items
+
+    for chunk in new_chunks:
+        assert chunk.id in vector_store.items
