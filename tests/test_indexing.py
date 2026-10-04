@@ -41,11 +41,20 @@ class FakeVectorStore(VectorStore):
     def delete(self, vector_id: str) -> None:
         self.items.pop(vector_id, None)
 
-    def delete_by_page(self, page_id: str) -> None:
+    def delete_by_page(
+        self,
+        page_id: str,
+        exclude_ids: set[str] | None = None,
+    ) -> None:
+        exclude_ids = exclude_ids or set()
+
         self.items = {
             vector_id: item
             for vector_id, item in self.items.items()
-            if item["payload"].get("page_id") != page_id
+            if (
+                item["payload"].get("page_id") != page_id
+                or vector_id in exclude_ids
+            )
         }
 
 
@@ -358,8 +367,6 @@ class BrokenEmbeddingService(EmbeddingService):
         return [[1.0, 0.0, 0.0]]
 
 
-
-
 def test_index_chunks_raises_when_embedding_count_does_not_match(
     session,
 ):
@@ -418,7 +425,6 @@ class FailingEmbeddingService(EmbeddingService):
     def embed_many(self, texts: list[str]) -> list[list[float]]:
         raise RuntimeError("Embedding service failed")
 
-    
 
 def test_index_chunks_keeps_old_vectors_when_embedding_fails(
     session,
@@ -511,8 +517,7 @@ class FailingVectorStore(FakeVectorStore):
         )
 
 
-
-def test_index_chunks_can_leave_partial_vectors_when_upsert_fails(
+def test_index_chunks_rolls_back_new_vectors_when_upsert_fails(
     session,
 ):
     document = Document(
@@ -542,15 +547,6 @@ def test_index_chunks_can_leave_partial_vectors_when_upsert_fails(
     session.add(old_chunk)
     session.flush()
 
-    vector_store = FakeVectorStore()
-
-    indexer = ChunkIndexer(
-        embedding_service=FakeEmbeddingService(),
-        vector_store=vector_store,
-    )
-
-    indexer.index_chunks([old_chunk])
-
     new_chunks = [
         DocumentChunk(
             page_id=page.id,
@@ -564,20 +560,25 @@ def test_index_chunks_can_leave_partial_vectors_when_upsert_fails(
     session.add_all(new_chunks)
     session.flush()
 
-    failing_store = FailingVectorStore(fail_on_upsert=2)
+    failing_store = FailingVectorStore(
+        fail_on_upsert=2,
+    )
 
+    # Создаём старый vector.
     failing_store.upsert(
-    vector_id=old_chunk.id,
-    vector=[1.0, 0.0, 0.0],
-    payload={
-        "document_id": document.id,
-        "page_id": page.id,
-        "page_number": 1,
-        "chunk_index": 0,
-        "text": old_chunk.text,
+        vector_id=old_chunk.id,
+        vector=[1.0, 0.0, 0.0],
+        payload={
+            "document_id": document.id,
+            "page_id": page.id,
+            "page_number": 1,
+            "chunk_index": 0,
+            "text": old_chunk.text,
         },
     )
 
+    # Не учитываем создание старого vector
+    # при подсчёте ошибки.
     failing_store.upsert_count = 0
 
     indexer = ChunkIndexer(
@@ -591,12 +592,12 @@ def test_index_chunks_can_leave_partial_vectors_when_upsert_fails(
     ):
         indexer.index_chunks(new_chunks)
 
+    # Старый vector должен сохраниться.
+    assert old_chunk.id in failing_store.items
+
+    # Новые vectors должны быть полностью удалены rollback'ом.
+    assert new_chunks[0].id not in failing_store.items
+    assert new_chunks[1].id not in failing_store.items
+    assert new_chunks[2].id not in failing_store.items
+
     assert len(failing_store.items) == 1
-    assert new_chunks[0].id in failing_store.items # old vector     ❌ потерян
-    assert old_chunk.id not in failing_store.items # new vector 0   ✓ записан
-    assert new_chunks[1].id not in failing_store.items # new vector 1   ❌ ошибка
-    assert new_chunks[2].id not in failing_store.items # new vector 2   ❌ не обработан
- 
-
-
-

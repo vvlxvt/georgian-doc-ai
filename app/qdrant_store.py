@@ -3,6 +3,7 @@ from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
+    HasIdCondition,
     MatchValue,
     PointStruct,
     VectorParams,
@@ -86,7 +87,14 @@ class QdrantVectorStore(VectorStore):
             points_selector=[vector_id],
         )
 
-    def delete_by_page(self, page_id: str) -> None:
+
+    def delete_by_page(
+        self,
+        page_id: str,
+        exclude_ids: set[str] | None = None,
+    ) -> None:
+        exclude_ids = exclude_ids or set()
+
         self.client.delete(
             collection_name=self.collection_name,
             points_selector=Filter(
@@ -94,7 +102,14 @@ class QdrantVectorStore(VectorStore):
                     FieldCondition(
                         key="page_id",
                         match=MatchValue(value=page_id),
-                    )
+                    ),
+                ],
+                must_not=[
+                    HasIdCondition(
+                        has_id=list(exclude_ids),
+                    ),
                 ]
+                if exclude_ids
+                else None,
             ),
         )

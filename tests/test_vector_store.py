@@ -83,11 +83,17 @@ class FakeVectorStore(VectorStore):
     def delete(self, vector_id: str) -> None:
         self.items.pop(vector_id, None)
 
-    def delete_by_page(self, page_id: str) -> None:
+    def delete_by_page(
+        self,
+        page_id: str,
+        exclude_ids: set[str] | None = None,
+    ) -> None:
+        exclude_ids = exclude_ids or set()
+
         self.items = {
             vector_id: item
             for vector_id, item in self.items.items()
-            if item["payload"].get("page_id") != page_id
+            if (item["payload"].get("page_id") != page_id or vector_id in exclude_ids)
         }
 
 

@@ -24,5 +24,9 @@ class VectorStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def delete_by_page(self, page_id: str) -> None:
+    def delete_by_page(
+        self,
+        page_id: str,
+        exclude_ids: set[str] | None = None,
+    ) -> None:
         raise NotImplementedError

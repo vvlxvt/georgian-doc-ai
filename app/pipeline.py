@@ -16,14 +16,14 @@ class DocumentPipeline:
         ocr_processor,
         text_normalizer,
         text_chunker,
-        chunk_indexer,
+        # chunk_indexer,
     ):
         self.session = session
         self.ocr_processor = ocr_processor
         self.text_normalizer = text_normalizer
         self.text_chunker = text_chunker
         self.chunk_repository = DocumentChunkRepository(session)
-        self.chunk_indexer = chunk_indexer
+        # self.chunk_indexer = chunk_indexer
 
     def _get_page(
         self,
@@ -110,13 +110,13 @@ class DocumentPipeline:
             page_number=page.page_number,
         )
 
-        db_chunks = self.chunk_repository.create_many(
-            page_id=db_page.id,
-            page_number=page.page_number,
-            chunks=chunks,
-        )
+        # db_chunks = self.chunk_repository.create_many(
+        #     page_id=db_page.id,
+        #     page_number=page.page_number,
+        #     chunks=chunks,
+        # )
 
-        self.chunk_indexer.index_chunks(db_chunks)
+        # self.chunk_indexer.index_chunks(db_chunks)
 
         self.chunk_repository.delete_by_page(db_page.id)
 
