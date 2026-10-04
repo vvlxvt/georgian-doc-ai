@@ -65,10 +65,24 @@ class QdrantVectorStore(VectorStore):
         self,
         vector: list[float],
         limit: int = 5,
+        document_id: str | None = None,
     ) -> list[dict]:
+        query_filter = None
+
+        if document_id is not None:
+            query_filter = Filter(
+                must=[
+                    FieldCondition(
+                        key="document_id",
+                        match=MatchValue(value=document_id),
+                    ),
+                ],
+            )
+
         results = self.client.query_points(
             collection_name=self.collection_name,
             query=vector,
+            query_filter=query_filter,
             limit=limit,
         ).points
 
@@ -87,7 +101,6 @@ class QdrantVectorStore(VectorStore):
             points_selector=[vector_id],
         )
 
-
     def delete_by_page(
         self,
         page_id: str,
@@ -104,12 +117,14 @@ class QdrantVectorStore(VectorStore):
                         match=MatchValue(value=page_id),
                     ),
                 ],
-                must_not=[
-                    HasIdCondition(
-                        has_id=list(exclude_ids),
-                    ),
-                ]
-                if exclude_ids
-                else None,
+                must_not=(
+                    [
+                        HasIdCondition(
+                            has_id=list(exclude_ids),
+                        ),
+                    ]
+                    if exclude_ids
+                    else None
+                ),
             ),
         )

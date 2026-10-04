@@ -16,6 +16,7 @@ class VectorStore(ABC):
         self,
         vector: list[float],
         limit: int = 5,
+        document_id: str | None = None,
     ) -> list[dict]:
         raise NotImplementedError
 

@@ -35,8 +35,28 @@ class FakeVectorStore(VectorStore):
         self,
         vector: list[float],
         limit: int = 5,
+        document_id: str | None = None,
     ) -> list[dict]:
-        return list(self.items.values())[:limit]
+        results = []
+
+        for vector_id, item in self.items.items():
+            payload = item["payload"]
+
+            if document_id is not None and payload.get("document_id") != document_id:
+                continue
+
+            results.append(
+                {
+                    "id": vector_id,
+                    "score": item.get("score", 1.0),
+                    "payload": payload,
+                }
+            )
+
+            if len(results) >= limit:
+                break
+
+        return results
 
     def delete(self, vector_id: str) -> None:
         self.items.pop(vector_id, None)
@@ -51,10 +71,7 @@ class FakeVectorStore(VectorStore):
         self.items = {
             vector_id: item
             for vector_id, item in self.items.items()
-            if (
-                item["payload"].get("page_id") != page_id
-                or vector_id in exclude_ids
-            )
+            if (item["payload"].get("page_id") != page_id or vector_id in exclude_ids)
         }
 
 
