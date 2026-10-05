@@ -46,9 +46,7 @@ class FakeVectorStore(VectorStore):
 
         if score_threshold is not None:
             results = [
-                result
-                for result in results
-                if result["score"] >= score_threshold
+                result for result in results if result["score"] >= score_threshold
             ]
 
         return results[:limit]

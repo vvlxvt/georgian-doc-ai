@@ -20,8 +20,6 @@ class ContextBuilder:
             else:
                 header = "[Unknown page]"
 
-            sections.append(
-                f"{header}\n{text}"
-            )
+            sections.append(f"{header}\n{text}")
 
         return "\n\n".join(sections)
