@@ -2,7 +2,6 @@ from app.answer import AnswerGenerator
 from app.context import ContextBuilder
 from app.embeddings import EmbeddingService
 from app.llm import LLMService
-from app.qdrant_store import QdrantVectorStore
 from app.rag import RAGPipeline
 from app.retrieval import Retriever
 
@@ -70,9 +69,7 @@ def test_rag_pipeline():
         answer_generator=AnswerGenerator(llm),
     )
 
-    answer = pipeline.answer(
-        question="How long is the contract valid?"
-    )
+    answer = pipeline.answer(question="How long is the contract valid?")
 
     assert answer == "The contract is valid for one year."
 
