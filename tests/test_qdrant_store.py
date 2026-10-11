@@ -1,6 +1,8 @@
 from uuid import uuid4
 
+import pytest
 from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams
 
 from app.qdrant_store import QdrantVectorStore
 
@@ -25,6 +27,47 @@ def test_qdrant_store_creates_collection():
     names = [collection.name for collection in collections.collections]
 
     assert "test_chunks" in names
+
+
+def test_qdrant_store_accepts_compatible_existing_collection():
+    client = QdrantClient(":memory:")
+    client.create_collection(
+        collection_name="test_chunks",
+        vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+    )
+
+    store = QdrantVectorStore(
+        client=client,
+        collection_name="test_chunks",
+        vector_size=VECTOR_SIZE,
+    )
+
+    assert store.collection_name == "test_chunks"
+
+
+@pytest.mark.parametrize(
+    ("existing_size", "existing_distance"),
+    [
+        (4, Distance.COSINE),
+        (VECTOR_SIZE, Distance.EUCLID),
+    ],
+)
+def test_qdrant_store_rejects_incompatible_existing_collection(
+    existing_size,
+    existing_distance,
+):
+    client = QdrantClient(":memory:")
+    client.create_collection(
+        collection_name="test_chunks",
+        vectors_config=VectorParams(size=existing_size, distance=existing_distance),
+    )
+
+    with pytest.raises(ValueError, match="is incompatible"):
+        QdrantVectorStore(
+            client=client,
+            collection_name="test_chunks",
+            vector_size=VECTOR_SIZE,
+        )
 
 
 def test_qdrant_store_upsert_and_search():

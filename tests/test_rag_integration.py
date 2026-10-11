@@ -1,13 +1,17 @@
-from qdrant_client import QdrantClient
 from uuid import uuid4
 
+import httpx
+import pytest
+from qdrant_client import QdrantClient
+
 from app.answer import AnswerGenerator
+from app.config import settings
 from app.context import ContextBuilder
 from app.embeddings import EmbeddingService
-from app.qdrant_store import QdrantVectorStore
-from app.retrieval import Retriever
-from app.rag import RAGPipeline
 from app.llm import OllamaLLMService
+from app.qdrant_store import QdrantVectorStore
+from app.rag import RAGPipeline
+from app.retrieval import Retriever
 
 
 class FakeEmbeddingService(EmbeddingService):
@@ -18,7 +22,21 @@ class FakeEmbeddingService(EmbeddingService):
         return [[1.0, 0.0, 0.0] for _ in texts]
 
 
+def require_ollama_model() -> None:
+    try:
+        response = httpx.get(f"{settings.ollama_url}/api/tags", timeout=2.0)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        pytest.skip(f"Ollama is unavailable: {exc}")
+
+    model_names = {model["name"] for model in response.json().get("models", [])}
+    if settings.ollama_model not in model_names:
+        pytest.skip(f"Ollama model '{settings.ollama_model}' is unavailable")
+
+
+@pytest.mark.integration
 def test_rag_pipeline_with_real_ollama():
+    require_ollama_model()
     client = QdrantClient(":memory:")
 
     vector_store = QdrantVectorStore(
@@ -37,10 +55,7 @@ def test_rag_pipeline_with_real_ollama():
             "page_id": "page-1",
             "page_number": 1,
             "chunk_index": 0,
-            "text": (
-                "The contract is valid for one year "
-                "from the date of signing."
-            ),
+            "text": "Договор действует один год с даты подписания.",
         },
     )
 
@@ -50,7 +65,8 @@ def test_rag_pipeline_with_real_ollama():
     )
 
     llm = OllamaLLMService(
-        model="llama3.2:3b",
+        model=settings.ollama_model,
+        base_url=settings.ollama_url,
     )
 
     pipeline = RAGPipeline(
@@ -60,8 +76,8 @@ def test_rag_pipeline_with_real_ollama():
     )
 
     answer = pipeline.answer(
-        question="How long is the contract valid?",
+        question="Каков срок действия договора?",
     )
 
-    assert answer
-    assert isinstance(answer, str)
+    assert "год" in answer.lower()
+    assert "[стр. 1]" in answer

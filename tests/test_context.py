@@ -32,8 +32,9 @@ def test_context_builder_builds_context():
 
     context = builder.build(results)
 
-    assert "Page 3" in context
-    assert "Page 7" in context
+    assert "НАЧАЛО_ИСТОЧНИКА [стр. 3]" in context
+    assert "НАЧАЛО_ИСТОЧНИКА [стр. 7]" in context
+    assert context.count("КОНЕЦ_ИСТОЧНИКА") == 2
     assert "საქართველოს კანონის პირველი მუხლი." in context
     assert "მეორე მნიშვნელოვანი დებულება." in context
 

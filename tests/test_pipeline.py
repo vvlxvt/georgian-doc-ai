@@ -1,15 +1,55 @@
 from unittest.mock import Mock
 
+import pytest
+
 from app.chunking import TextChunker
 from app.models import Document, DocumentPage, PageStatus
 from app.pdf import PDFPage
 from app.pipeline import DocumentPipeline
+from app.retrieval import Retriever
 from app.text import TextNormalizer
+from app.vector_store import VectorStore
 
 
-def create_pipeline(session, ocr_processor=None):
+class FakeEmbeddingService:
+    def embed(self, text):
+        return [1.0, 0.0, 0.0]
+
+    def embed_many(self, texts):
+        return [[1.0, 0.0, 0.0] for _ in texts]
+
+
+class FakeVectorStore(VectorStore):
+    def __init__(self):
+        self.items = {}
+
+    def upsert(self, vector_id, vector, payload):
+        self.items[vector_id] = {"vector": vector, "payload": payload}
+
+    def search(self, vector, limit=5, document_id=None):
+        return [
+            {"id": vector_id, "score": 1.0, "payload": item["payload"]}
+            for vector_id, item in self.items.items()
+            if document_id is None or item["payload"]["document_id"] == document_id
+        ][:limit]
+
+    def delete(self, vector_id):
+        self.items.pop(vector_id, None)
+
+    def delete_by_page(self, page_id, exclude_ids=None):
+        exclude_ids = exclude_ids or set()
+        self.items = {
+            vector_id: item
+            for vector_id, item in self.items.items()
+            if item["payload"].get("page_id") != page_id or vector_id in exclude_ids
+        }
+
+
+def create_pipeline(session, ocr_processor=None, chunk_indexer=None):
     if ocr_processor is None:
         ocr_processor = Mock()
+    if chunk_indexer is None:
+        chunk_indexer = Mock()
 
     return DocumentPipeline(
         session=session,
@@ -19,6 +59,7 @@ def create_pipeline(session, ocr_processor=None):
             max_length=500,
             overlap=50,
         ),
+        chunk_indexer=chunk_indexer,
     )
 
 
@@ -83,6 +124,105 @@ def test_process_native_text(session):
     assert saved_page.content_hash == pipeline._hash_text(page.text)
 
     reader.render_page.assert_not_called()
+
+
+def test_process_page_indexes_chunks_and_makes_them_retrievable(session):
+    from app.indexing import ChunkIndexer
+
+    vector_store = FakeVectorStore()
+    embedding_service = FakeEmbeddingService()
+    pipeline = create_pipeline(
+        session,
+        chunk_indexer=ChunkIndexer(embedding_service, vector_store),
+    )
+    document = create_document(session)
+
+    pipeline._process_page(document, create_page(), Mock())
+
+    results = Retriever(embedding_service, vector_store).search(
+        query="Что говорится в документе?",
+        document_id=document.id,
+    )
+
+    assert len(results) == 1
+    assert results[0].payload["page_number"] == 1
+    assert results[0].payload["text"] == (
+        "This is a sufficiently long native text for testing."
+    )
+
+
+def test_reprocessing_page_replaces_old_database_chunks_and_vectors(session):
+    from app.indexing import ChunkIndexer
+
+    vector_store = FakeVectorStore()
+    pipeline = create_pipeline(
+        session,
+        chunk_indexer=ChunkIndexer(FakeEmbeddingService(), vector_store),
+    )
+    document = create_document(session)
+
+    pipeline._process_page(
+        document,
+        create_page(text="First sufficiently long native text for testing."),
+        Mock(),
+    )
+    original_vector_ids = set(vector_store.items)
+
+    pipeline._process_page(
+        document,
+        create_page(text="Second sufficiently long native text for testing."),
+        Mock(),
+    )
+
+    page = get_document_page(session, document)
+    assert [chunk.text for chunk in page.chunks] == [
+        "Second sufficiently long native text for testing."
+    ]
+    assert not original_vector_ids & set(vector_store.items)
+    assert [item["payload"]["text"] for item in vector_store.items.values()] == [
+        "Second sufficiently long native text for testing."
+    ]
+
+
+def test_indexing_failure_rolls_back_new_page_and_leaves_no_vectors(session):
+    chunk_indexer = Mock()
+    chunk_indexer.index_chunks.side_effect = RuntimeError("Qdrant is unavailable")
+    pipeline = create_pipeline(session, chunk_indexer=chunk_indexer)
+    document = create_document(session)
+
+    with pytest.raises(RuntimeError, match="Qdrant is unavailable"):
+        pipeline._process_page(document, create_page(), Mock())
+
+    assert get_document_page(session, document) is None
+
+
+def test_reindexing_failure_keeps_previous_chunks_and_vectors(session):
+    from app.indexing import ChunkIndexer
+
+    vector_store = FakeVectorStore()
+    pipeline = create_pipeline(
+        session,
+        chunk_indexer=ChunkIndexer(FakeEmbeddingService(), vector_store),
+    )
+    document = create_document(session)
+    original_text = "First sufficiently long native text for testing."
+    pipeline._process_page(document, create_page(text=original_text), Mock())
+    original_vector_ids = set(vector_store.items)
+
+    failed_indexer = Mock()
+    failed_indexer.index_chunks.side_effect = RuntimeError("Qdrant is unavailable")
+    pipeline.chunk_indexer = failed_indexer
+
+    with pytest.raises(RuntimeError, match="Qdrant is unavailable"):
+        pipeline._process_page(
+            document,
+            create_page(text="Second sufficiently long native text for testing."),
+            Mock(),
+        )
+
+    page = get_document_page(session, document)
+    assert [chunk.text for chunk in page.chunks] == [original_text]
+    assert set(vector_store.items) == original_vector_ids
 
 
 def test_process_page_with_ocr(session):

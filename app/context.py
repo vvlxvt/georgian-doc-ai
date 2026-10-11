@@ -16,10 +16,10 @@ class ContextBuilder:
                 continue
 
             if page_number is not None:
-                header = f"[Page {page_number}]"
+                header = f"НАЧАЛО_ИСТОЧНИКА [стр. {page_number}]"
             else:
-                header = "[Unknown page]"
+                header = "НАЧАЛО_ИСТОЧНИКА [страница неизвестна]"
 
-            sections.append(f"{header}\n{text}")
+            sections.append(f"{header}\n{text}\nКОНЕЦ_ИСТОЧНИКА")
 
         return "\n\n".join(sections)

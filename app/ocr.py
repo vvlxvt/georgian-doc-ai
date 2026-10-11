@@ -3,6 +3,8 @@ from abc import ABC, abstractmethod
 import pytesseract
 from PIL import Image
 
+from app.config import settings
+
 
 class OCRProcessor(ABC):
     @abstractmethod
@@ -14,10 +16,10 @@ class OCRProcessor(ABC):
 class TesseractOCREngine(OCRProcessor):
     def __init__(
         self,
-        languages: str = "kat+eng",
+        languages: str | None = None,
         psm: int = 3,
     ):
-        self.languages = languages
+        self.languages = languages or settings.tesseract_languages
         self.psm = psm
 
     def recognize(self, image_path: str) -> str:

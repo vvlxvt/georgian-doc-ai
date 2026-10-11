@@ -50,7 +50,7 @@ class FakeLLMService(LLMService):
 
     def generate(self, prompt: str) -> str:
         self.prompts.append(prompt)
-        return "The contract is valid for one year."
+        return "Договор действует один год. [стр. 3]"
 
 
 def test_rag_pipeline():
@@ -69,13 +69,14 @@ def test_rag_pipeline():
         answer_generator=AnswerGenerator(llm),
     )
 
-    answer = pipeline.answer(question="How long is the contract valid?")
+    answer = pipeline.answer(question="Каков срок действия договора?")
 
-    assert answer == "The contract is valid for one year."
+    assert answer == "Договор действует один год. [стр. 3]"
 
     assert len(llm.prompts) == 1
 
     prompt = llm.prompts[0]
 
-    assert "How long is the contract valid?" in prompt
+    assert "Каков срок действия договора?" in prompt
     assert "The contract is valid for one year." in prompt
+    assert "[стр. 3]" in prompt

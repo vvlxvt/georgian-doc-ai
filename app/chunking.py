@@ -10,6 +10,7 @@ class TextChunk:
 
 
 class TextChunker:
+    """Splits text into chunks whose maximum length is measured in characters."""
 
     def __init__(
         self,
@@ -220,6 +221,31 @@ class TextChunker:
         chunk_index = start_index
 
         for word in words:
+            if len(word) > self.max_length:
+                if current_words:
+                    chunks.append(
+                        self._create_chunk(
+                            current_words,
+                            page_number,
+                            chunk_index,
+                            separator=" ",
+                        )
+                    )
+                    chunk_index += 1
+                    current_words = []
+
+                for offset in range(0, len(word), self.max_length):
+                    chunks.append(
+                        TextChunk(
+                            page_number=page_number,
+                            chunk_index=chunk_index,
+                            text=word[offset : offset + self.max_length],
+                        )
+                    )
+                    chunk_index += 1
+
+                continue
+
             candidate = current_words + [word]
 
             if current_words and len(" ".join(candidate)) > self.max_length:

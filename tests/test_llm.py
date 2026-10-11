@@ -11,11 +11,8 @@ def test_ollama_llm_service_configuration():
     assert llm.base_url == "http://localhost:11434"
 
 
-
 llm = OllamaLLMService()
 
-answer = llm.generate(
-    "Explain in one sentence what a vector database is."
-)
+answer = llm.generate("Explain in one sentence what a vector database is.")
 
 print(answer)

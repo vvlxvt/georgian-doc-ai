@@ -63,3 +63,11 @@ class DocumentChunkRepository:
         self.session.execute(
             delete(DocumentChunk).where(DocumentChunk.page_id == page_id)
         )
+
+    def delete_by_ids(self, chunk_ids: set[str]) -> None:
+        if not chunk_ids:
+            return
+
+        self.session.execute(
+            delete(DocumentChunk).where(DocumentChunk.id.in_(chunk_ids))
+        )

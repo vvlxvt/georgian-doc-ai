@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -42,6 +42,13 @@ class Document(Base):
 
 class DocumentPage(Base):
     __tablename__ = "document_pages"
+    __table_args__ = (
+        UniqueConstraint(
+            "document_id",
+            "page_number",
+            name="uq_document_pages_document_id_page_number",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36),

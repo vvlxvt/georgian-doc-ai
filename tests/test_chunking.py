@@ -109,19 +109,46 @@ def test_overlap():
 
     assert result[2].text == ("Charlie sentence is here. Delta sentence is here.")
 
-    def test_long_sentence_is_split_by_words():
-        text = (
-            "This is a very long sentence containing many words "
-            "that should be split into several chunks because "
-            "it is longer than the maximum allowed chunk length."
-        )
 
-        chunker = TextChunker(
-            max_length=50,
-            overlap=0,
-        )
+def test_long_sentence_is_split_by_words():
+    text = (
+        "This is a very long sentence containing many words "
+        "that should be split into several chunks because "
+        "it is longer than the maximum allowed chunk length."
+    )
 
-        result = chunker.chunk(text, page_number=1)
+    chunker = TextChunker(
+        max_length=50,
+        overlap=0,
+    )
 
-        assert len(result) > 1
-        assert all(len(chunk.text) <= 50 for chunk in result)
+    result = chunker.chunk(text, page_number=1)
+
+    assert len(result) > 1
+    assert all(len(chunk.text) <= 50 for chunk in result)
+
+
+def test_chunk_at_exact_character_limit_is_not_split():
+    text = "ა" * 10
+
+    result = TextChunker(max_length=10, overlap=0).chunk(text, page_number=1)
+
+    assert [chunk.text for chunk in result] == [text]
+
+
+def test_georgian_word_longer_than_limit_is_split_by_characters():
+    text = "ა" * 21
+
+    result = TextChunker(max_length=10, overlap=0).chunk(text, page_number=1)
+
+    assert [chunk.text for chunk in result] == ["ა" * 10, "ა" * 10, "ა"]
+    assert all(len(chunk.text) <= 10 for chunk in result)
+
+
+def test_overlap_must_not_be_negative():
+    try:
+        TextChunker(max_length=10, overlap=-1)
+    except ValueError as exc:
+        assert str(exc) == "overlap must not be negative"
+    else:
+        raise AssertionError("ValueError was not raised")

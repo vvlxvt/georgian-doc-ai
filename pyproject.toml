@@ -16,3 +16,6 @@ select = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: requires a running Ollama service and configured model",
+]

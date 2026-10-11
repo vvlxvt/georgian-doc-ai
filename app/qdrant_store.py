@@ -34,6 +34,7 @@ class QdrantVectorStore(VectorStore):
         )
 
         if exists:
+            self._validate_collection()
             return
 
         self.client.create_collection(
@@ -43,6 +44,22 @@ class QdrantVectorStore(VectorStore):
                 distance=Distance.COSINE,
             ),
         )
+
+    def _validate_collection(self) -> None:
+        collection = self.client.get_collection(self.collection_name)
+        vectors = collection.config.params.vectors
+
+        if not isinstance(vectors, VectorParams):
+            raise ValueError(
+                f"Collection '{self.collection_name}' must use a single unnamed vector"
+            )
+
+        if vectors.size != self.vector_size or vectors.distance != Distance.COSINE:
+            raise ValueError(
+                f"Collection '{self.collection_name}' is incompatible: expected "
+                f"size={self.vector_size}, distance={Distance.COSINE.value}; got "
+                f"size={vectors.size}, distance={vectors.distance.value}"
+            )
 
     def upsert(
         self,

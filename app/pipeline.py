@@ -16,14 +16,14 @@ class DocumentPipeline:
         ocr_processor,
         text_normalizer,
         text_chunker,
-        # chunk_indexer,
+        chunk_indexer,
     ):
         self.session = session
         self.ocr_processor = ocr_processor
         self.text_normalizer = text_normalizer
         self.text_chunker = text_chunker
         self.chunk_repository = DocumentChunkRepository(session)
-        # self.chunk_indexer = chunk_indexer
+        self.chunk_indexer = chunk_indexer
 
     def _get_page(
         self,
@@ -110,25 +110,36 @@ class DocumentPipeline:
             page_number=page.page_number,
         )
 
-        # db_chunks = self.chunk_repository.create_many(
-        #     page_id=db_page.id,
-        #     page_number=page.page_number,
-        #     chunks=chunks,
-        # )
-
-        # self.chunk_indexer.index_chunks(db_chunks)
-
-        self.chunk_repository.delete_by_page(db_page.id)
-
-        self.chunk_repository.create_many(
+        previous_chunks = self.chunk_repository.get_by_page(db_page.id)
+        db_chunks = self.chunk_repository.create_many(
             page_id=db_page.id,
             page_number=page.page_number,
             chunks=chunks,
         )
+        self.session.flush()
 
-        self.session.commit()
+        indexed = False
+        try:
+            self.chunk_indexer.index_chunks(db_chunks)
+            indexed = True
+            self.chunk_repository.delete_by_ids({chunk.id for chunk in previous_chunks})
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+
+            if indexed:
+                self._restore_previous_vectors(previous_chunks, db_page.id)
+
+            raise
 
         print(f"Page {page.page_number}: " f"{extraction_method}, {len(chunks)} chunks")
+
+    def _restore_previous_vectors(self, previous_chunks, page_id: str) -> None:
+        if previous_chunks:
+            self.chunk_indexer.index_chunks(previous_chunks)
+            return
+
+        self.chunk_indexer.vector_store.delete_by_page(page_id)
 
     def _get_or_create_page(
         self,
