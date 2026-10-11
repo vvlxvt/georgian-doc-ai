@@ -1,4 +1,26 @@
+import os
+
+import pytest
+
+from app.config import settings
 from app.embeddings import EmbeddingService, HuggingFaceEmbeddingService
+
+
+def require_embedding_model() -> HuggingFaceEmbeddingService:
+    """Load the real model, skipping when the caller did not opt in.
+
+    Loading BAAI/bge-m3 on Windows can abort the interpreter inside torch with
+    "Windows fatal exception: access violation" during ``encode``. That is a
+    hard crash, not an exception, so it cannot be caught: the test has to be
+    skipped before the model is touched. Set RUN_REAL_MODEL_TESTS=1 to opt in.
+    """
+    if os.getenv("RUN_REAL_MODEL_TESTS") != "1":
+        pytest.skip(
+            "set RUN_REAL_MODEL_TESTS=1 to run against the real "
+            f"'{settings.embedding_model}' model"
+        )
+
+    return HuggingFaceEmbeddingService(model_name=settings.embedding_model)
 
 
 def test_embedding_service_is_abstract():
@@ -73,17 +95,19 @@ def test_embed_many_returns_vector_for_each_text():
         assert len(vector) == 3
 
 
+@pytest.mark.integration
 def test_huggingface_embedding_returns_1024_dimensions():
-    service = HuggingFaceEmbeddingService()
+    service = require_embedding_model()
 
     embedding = service.embed("თბილისი საქართველოს დედაქალაქია")
 
-    assert len(embedding) == 1024
+    assert len(embedding) == settings.embedding_size
     assert all(isinstance(value, float) for value in embedding)
 
 
+@pytest.mark.integration
 def test_huggingface_embedding_many_returns_one_vector_per_text():
-    service = HuggingFaceEmbeddingService()
+    service = require_embedding_model()
 
     texts = [
         "თბილისი საქართველოს დედაქალაქია",
@@ -94,7 +118,7 @@ def test_huggingface_embedding_many_returns_one_vector_per_text():
     embeddings = service.embed_many(texts)
 
     assert len(embeddings) == len(texts)
-    assert all(len(embedding) == 1024 for embedding in embeddings)
+    assert all(len(embedding) == settings.embedding_size for embedding in embeddings)
     assert all(
         isinstance(value, float) for embedding in embeddings for value in embedding
     )

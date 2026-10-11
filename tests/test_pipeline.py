@@ -83,7 +83,6 @@ def create_page(
         page_number=page_number,
         text=text,
         content_hash="",
-        _doc_path="test.pdf",
     )
 
 

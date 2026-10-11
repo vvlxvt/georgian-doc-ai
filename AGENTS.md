@@ -48,19 +48,20 @@ Always run through the virtualenv interpreter, never a global `python`:
 .\venv\Scripts\alembic.exe upgrade head
 .\venv\Scripts\alembic.exe downgrade base
 .\venv\Scripts\python.exe main.py preflight
+.\venv\Scripts\python.exe main.py index data\input\georgian_scan.pdf
 ```
 
 ## Layout
 
 ```
-main.py                 CLI entry point (`preflight` subcommand)
+main.py                 CLI entry point (`preflight` and `index` subcommands)
 app/
   config.py             Settings (pydantic-settings), env-backed, frozen
-  preflight.py          validate_runtime(): Qdrant, Ollama model, Tesseract langs
+  preflight.py          validate_runtime(): schema, Qdrant, Ollama, Tesseract
   database.py           engine + SessionLocal + init_db() (tests/convenience only)
   models.py             Document, DocumentPage, DocumentChunk
   repositories.py       DocumentChunkRepository (create/get/delete)
-  pdf.py                PDFReader.page / render_page, sha256 content hashes
+  pdf.py                PDFReader / PDFPage, sha256 content hashes
   ocr.py                OCRProcessor ABC, TesseractOCREngine
   text.py               TextNormalizer
   chunking.py           TextChunker (character-based, paragraph -> sentence -> word)
@@ -72,11 +73,11 @@ app/
   retrieval.py          Retriever: embed query -> search -> score filter
   context.py            ContextBuilder: source blocks with НАЧАЛО/КОНЕЦ markers
   answer.py             AnswerGenerator: Russian-only prompt with citations
-  llm.py                LLMService ABC, OllamaLLMService
+  llm.py                LLMService ABC, OllamaLLMService (_post is the HTTP seam)
   rag.py                RAGPipeline: retriever -> context -> answer
   dependencies.py       lru_cache singletons + reset_application_services()
 alembic/                env.py + versions/
-tests/                  one test module per app module
+tests/                  one test module per app module, plus test_main.py
 REVIEW_QUEUE.md         review findings and their completion status
 ```
 
@@ -127,8 +128,9 @@ explicit justification in `REVIEW_QUEUE.md`.
    OCR pages hash to `sha256(rendered_png_bytes)`. A page whose `content_hash`
    is unchanged and whose status is `PARSED`/`OCR` is skipped, so re-running
    ingestion is cheap and idempotent.
-4. **`MIN_TEXT_LENGTH = 20`** decides native vs. OCR. Shorter native text falls
-   through to OCR.
+4. **`min_text_length`** (default 20, `MIN_TEXT_LENGTH`) decides native vs. OCR.
+   Shorter native text falls through to OCR. It is a constructor argument so
+   tests can set it explicitly.
 5. **SQLite and Qdrant are not atomic.** `_save_page_text` writes new chunk rows
    and new vectors, and only deletes the previous chunk rows after indexing
    succeeds; on failure it rolls back the session and restores the previous
@@ -160,6 +162,13 @@ mirrored in `.env.example`. `Settings` is frozen and `extra="ignore"`.
 | `OLLAMA_URL` | `http://localhost:11434` |
 | `OLLAMA_MODEL` | `llama3.2:3b` |
 | `TESSERACT_LANGUAGES` | `kat+eng` |
+| `CHUNK_MAX_LENGTH` | `1000` | Characters, not tokens |
+| `CHUNK_OVERLAP` | `100` | Words of overlap |
+| `MIN_TEXT_LENGTH` | `20` | Below this a page goes to OCR |
+
+`.env.example` must list every field; `tests/test_config.py` asserts the two
+stay in sync. `create_document_pipeline()` in `app/dependencies.py` is the only
+place ingestion wiring is assembled, so a new ingestion setting goes in there.
 
 Never hardcode a URL, port, model name, or language list in application code.
 `.env` is gitignored; `.env.example` is the tracked template and must stay in
@@ -196,27 +205,30 @@ Schema evolution goes through Alembic, never `Base.metadata.create_all()`.
 - Test names must sit at module scope. A nested `def test_...` is silently not
   collected; this was a real bug in `tests/test_chunking.py`.
 
-### Known suite issues (verified 2026-10-11)
+### Current suite status (verified 2026-10-11)
 
-`76 passed, 1 deselected` with `--ignore=tests/test_embeddings.py`. These are
-pre-existing, not regressions you introduced:
+`100 passed, 3 deselected` with `pytest -m "not integration"`, and
+`ruff check .` / `black --check .` are clean.
 
-- `tests/test_embeddings.py::test_huggingface_embedding_*` instantiate the real
-  `BAAI/bge-m3` model, and on this machine the process dies with
-  `Windows fatal exception: access violation` inside `torch.nn.functional`.
-  They violate the "no model download in the default suite" rule and belong
-  behind the `integration` marker.
-- `test_migration_upgrades_legacy_schema_with_document_chunks` cannot create its
-  `tmp_path` when `%TEMP%\pytest-of-vital` is not writable
-  (`PermissionError [WinError 5]`). Rerun with `--basetemp=.tmp\pytest-basetemp`.
-- `ruff check .` reports 4 pre-existing errors: `F841` for the unused `args` in
-  `main.py`, plus three `E402`s in `tests/test_migrations.py` where imports
-  follow `pytest.importorskip`. Fix them when you edit those files.
+How the suite stays hermetic:
 
-`tests/test_pipeline_native.py`, `tests/test_pipeline_OCR.py`, and
-`tests/test_tesseract.py` are manual scripts with a `main()` and no test
-functions, so pytest collects nothing from them; the first two also construct
-`DocumentPipeline` with an outdated signature. Do not rely on them.
+- Real-service tests sit behind `@pytest.mark.integration` and skip themselves
+  when the service is unavailable: the Ollama round trip in
+  `tests/test_rag_integration.py` and the real `BAAI/bge-m3` loads in
+  `tests/test_embeddings.py`. The model tests additionally require
+  `RUN_REAL_MODEL_TESTS=1`, because loading that model on Windows can abort the
+  interpreter with "Windows fatal exception: access violation" inside `torch`.
+  A hard crash cannot be caught, so the skip must happen before the model is
+  constructed.
+- `OllamaLLMService._post` is the single network seam; patch it instead of
+  reaching a live Ollama.
+- `addopts = "--basetemp=.tmp/pytest"` in `pyproject.toml` keeps pytest's
+  temporary files inside the project, so a broken or ACL-denied `%TEMP%`
+  cannot fail the run. `.tmp/` is gitignored.
+- `tests/test_config.py` clears every `Settings` field from the environment
+  before asserting defaults, so a developer `.env` cannot leak into it.
+- Files under `tests/` are pytest modules only. Do not add ad-hoc scripts with
+  a `main()` there; the suite must run without side effects.
 
 ## Workflow
 

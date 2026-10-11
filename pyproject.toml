@@ -16,6 +16,7 @@ select = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--basetemp=.tmp/pytest"
 markers = [
     "integration: requires a running Ollama service and configured model",
 ]

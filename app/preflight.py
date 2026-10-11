@@ -1,12 +1,36 @@
 import httpx
 import pytesseract
 from qdrant_client import QdrantClient
+from sqlalchemy import inspect
 
 from app.config import Settings
+from app.database import engine
 
 
 class PreflightError(RuntimeError):
     pass
+
+
+REQUIRED_TABLES = ("documents", "document_pages", "document_chunks")
+
+
+def validate_schema(config: Settings) -> None:
+    """Ensure migrations were applied before ingestion touches the database."""
+    try:
+        tables = set(inspect(engine).get_table_names())
+    except Exception as exc:
+        raise PreflightError(
+            f"Database at {config.database_url} is unavailable: {exc}"
+        ) from exc
+
+    missing_tables = sorted(set(REQUIRED_TABLES) - tables)
+
+    if missing_tables:
+        missing = ", ".join(missing_tables)
+        raise PreflightError(
+            f"Database schema is out of date, missing: {missing}. "
+            "Run 'alembic upgrade head' first."
+        )
 
 
 def validate_qdrant(config: Settings) -> None:
@@ -47,6 +71,7 @@ def validate_tesseract(config: Settings) -> None:
 
 
 def validate_runtime(config: Settings) -> None:
+    validate_schema(config)
     validate_qdrant(config)
     validate_ollama(config)
     validate_tesseract(config)

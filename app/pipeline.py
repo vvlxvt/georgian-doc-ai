@@ -2,11 +2,12 @@ import hashlib
 import tempfile
 from pathlib import Path
 
+from app.config import settings
 from app.models import Document, DocumentPage, PageStatus
 from app.pdf import PDFPage, PDFReader
 from app.repositories import DocumentChunkRepository
 
-MIN_TEXT_LENGTH = 20
+MIN_TEXT_LENGTH = settings.min_text_length
 
 
 class DocumentPipeline:
@@ -17,6 +18,7 @@ class DocumentPipeline:
         text_normalizer,
         text_chunker,
         chunk_indexer,
+        min_text_length: int = MIN_TEXT_LENGTH,
     ):
         self.session = session
         self.ocr_processor = ocr_processor
@@ -24,6 +26,7 @@ class DocumentPipeline:
         self.text_chunker = text_chunker
         self.chunk_repository = DocumentChunkRepository(session)
         self.chunk_indexer = chunk_indexer
+        self.min_text_length = min_text_length
 
     def _get_page(
         self,
@@ -175,7 +178,7 @@ class DocumentPipeline:
             page_number=page.page_number,
         )
 
-        if len(page.text) >= MIN_TEXT_LENGTH:
+        if len(page.text) >= self.min_text_length:
             page.content_hash = self._hash_text(page.text)
 
             if self._is_already_processed(

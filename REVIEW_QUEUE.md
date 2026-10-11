@@ -2,8 +2,8 @@
 
 ## Status
 - Total: 8
-- Completed: 7
-- Current: 8
+- Completed: 8
+- Current: none
 - Blocked: 0
 
 ## Tasks
@@ -85,7 +85,7 @@
 
 **Verification:** Run `pytest tests/test_chunking.py -vv` and confirm the long-sentence case appears as an independently collected test and all chunk size invariants hold.
 
-### 8. [~] Document and validate the operational RAG configuration
+### 8. [x] Document and validate the operational RAG configuration
 **Review:** The reviewed configuration hardcodes local service endpoints and model settings; together with the migration and external-service findings, this leaves deployments unable to reproduce or diagnose startup behavior.
 
 **Changes:** Move operational settings to environment-backed configuration with documented defaults, add an `.env.example`, and provide startup/preflight validation for Qdrant, Ollama, the configured model, and Georgian Tesseract language data. Document local development, migration, indexing, and integration-test commands.
@@ -95,3 +95,9 @@
 **Tests:** Add settings parsing/override tests and preflight tests using mocks for each unavailable dependency; do not make unit tests require running external services.
 
 **Verification:** Start from a clean environment using only the documented setup, run the preflight check, apply migrations, index a sample PDF, and execute the non-integration test suite.
+
+**Outcome:** Operational settings are env-backed with documented defaults in `.env.example`, and ingestion tuning (`CHUNK_MAX_LENGTH`, `CHUNK_OVERLAP`, `MIN_TEXT_LENGTH`) was moved out of hardcoded constants. `validate_runtime()` now also checks the database schema, so an unmigrated database fails at preflight with "run 'alembic upgrade head' first" instead of mid-ingestion. `main.py index <pdf>` provides the documented indexing entry point and assembles its collaborators through `create_document_pipeline()`. `README.md` documents setup, configuration, migrations, indexing, and both test commands.
+
+Verified against a clean database: fresh schema rejected by preflight, `alembic upgrade head` creating all three tables plus the unique `(document_id, page_number)` index, preflight then passing, and indexing `data/input/georgian_scan.pdf` producing 4 pages and 37 retrievable chunks whose payloads carry `document_id`, `page_id`, `page_number`, `chunk_index`, and `text`. Re-running the same file skipped all 4 pages and added no chunks.
+
+Fixed alongside this item: `PDFPage` required a `_doc_path` argument that `PDFReader.pages()` never passed, which made every real ingestion call raise `TypeError`; the vestigial field was removed. Also moved the real-model tests in `tests/test_embeddings.py` behind the `integration` marker and a `RUN_REAL_MODEL_TESTS=1` opt-in (loading `BAAI/bge-m3` aborts the interpreter with a `torch` access violation, a hard crash that cannot be caught, so the skip must precede model construction), removed a module-level live Ollama call from `tests/test_llm.py` in favour of the new `OllamaLLMService._post` seam, pinned pytest's base temp directory into `.tmp/pytest` so an ACL-denied `%TEMP%` cannot fail the suite, deleted three dead scripts from `tests/`, and cleared the remaining ruff findings. `pytest -m "not integration"` is 100 passed with `ruff` and `black` clean, and `pytest -m integration` passes its real-Ollama RAG case.

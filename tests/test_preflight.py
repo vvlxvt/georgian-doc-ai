@@ -2,9 +2,11 @@ import pytest
 
 from app.config import Settings
 from app.preflight import (
+    REQUIRED_TABLES,
     PreflightError,
     validate_ollama,
     validate_qdrant,
+    validate_schema,
     validate_tesseract,
 )
 
@@ -61,3 +63,40 @@ def test_validate_tesseract_rejects_missing_georgian_language(monkeypatch):
 
     with pytest.raises(PreflightError, match="kat"):
         validate_tesseract(Settings(tesseract_languages="kat+eng", _env_file=None))
+
+
+class FakeInspector:
+    def __init__(self, table_names):
+        self.table_names = list(table_names)
+
+    def get_table_names(self):
+        return self.table_names
+
+
+def test_validate_schema_accepts_migrated_database(monkeypatch):
+    monkeypatch.setattr(
+        "app.preflight.inspect",
+        lambda engine: FakeInspector(REQUIRED_TABLES),
+    )
+
+    validate_schema(Settings(_env_file=None))
+
+
+def test_validate_schema_rejects_database_without_migrations(monkeypatch):
+    monkeypatch.setattr(
+        "app.preflight.inspect",
+        lambda engine: FakeInspector(["documents"]),
+    )
+
+    with pytest.raises(PreflightError, match="alembic upgrade head"):
+        validate_schema(Settings(_env_file=None))
+
+
+def test_validate_schema_wraps_unreachable_database(monkeypatch):
+    def broken_inspect(engine):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr("app.preflight.inspect", broken_inspect)
+
+    with pytest.raises(PreflightError, match="is unavailable"):
+        validate_schema(Settings(_env_file=None))

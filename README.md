@@ -2,6 +2,17 @@
 
 RAG prototype for extracting Georgian PDF documents and answering grounded questions in Russian.
 
+Source documents are Georgian, answers and prompt text are Russian, and all code and documentation is English.
+
+## Architecture
+
+Ingestion and query paths are separate:
+
+- **Ingestion**: `app/pipeline.py` reads a PDF (`app/pdf.py`), uses the native text layer when a page has enough text and falls back to Tesseract OCR (`app/ocr.py`), normalizes it (`app/text.py`), chunks it by characters (`app/chunking.py`), stores pages and chunks in SQLite (`app/models.py`, `app/repositories.py`), and indexes the chunks in Qdrant (`app/indexing.py`, `app/qdrant_store.py`).
+- **Query**: `app/rag.py` embeds the question (`app/embeddings.py`), searches Qdrant (`app/retrieval.py`), wraps the hits as untrusted source blocks (`app/context.py`), and asks Ollama for a Russian answer with `[стр. N]` citations (`app/answer.py`, `app/llm.py`).
+
+External services sit behind abstract interfaces (`EmbeddingService`, `VectorStore`, `OCRProcessor`, `LLMService`) and are constructed once per process in `app/dependencies.py`.
+
 ## Local setup
 
 1. Install dependencies:
@@ -18,11 +29,51 @@ RAG prototype for extracting Georgian PDF documents and answering grounded quest
    .\venv\Scripts\alembic.exe upgrade head
    ```
 
-5. Check all runtime dependencies before ingestion:
+5. Check all runtime dependencies, including the database schema, before ingestion:
 
    ```powershell
    .\venv\Scripts\python.exe main.py preflight
    ```
+
+6. Index a document:
+
+   ```powershell
+   .\venv\Scripts\python.exe main.py index data\input\georgian_scan.pdf
+   ```
+
+Re-running `index` on the same file is cheap: pages whose content hash is unchanged are skipped, so OCR is not repeated.
+
+## Configuration
+
+All operational settings are environment-backed; see `.env.example` for the full list with defaults.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | `sqlite:///data/app.db` | SQLAlchemy URL |
+| `QDRANT_URL` | `http://localhost:6333` | |
+| `QDRANT_COLLECTION` | `documents` | |
+| `EMBEDDING_MODEL` | `BAAI/bge-m3` | |
+| `EMBEDDING_SIZE` | `1024` | Must match the Qdrant collection |
+| `OLLAMA_URL` | `http://localhost:11434` | |
+| `OLLAMA_MODEL` | `llama3.2:3b` | |
+| `TESSERACT_LANGUAGES` | `kat+eng` | Languages joined with `+` |
+| `CHUNK_MAX_LENGTH` | `1000` | Characters, not tokens |
+| `CHUNK_OVERLAP` | `100` | Words of overlap between chunks |
+| `MIN_TEXT_LENGTH` | `20` | Below this a page goes to OCR |
+
+Changing `EMBEDDING_MODEL` or `EMBEDDING_SIZE` requires a compatible Qdrant collection and re-indexing all documents. `QdrantVectorStore` refuses to start against a collection whose vector size or distance does not match, so the mismatch surfaces at startup rather than at indexing time.
+
+## Migrations
+
+Schema changes go through Alembic; `Base.metadata.create_all()` is never used for production schema evolution.
+
+```powershell
+.\venv\Scripts\alembic.exe upgrade head
+.\venv\Scripts\alembic.exe downgrade base
+.\venv\Scripts\alembic.exe current
+```
+
+The initial revision is idempotent: it inspects existing tables and indexes, so it upgrades an older `data/app.db` that predates `document_chunks` and the `(document_id, page_number)` unique constraint.
 
 ## Tests
 
@@ -31,4 +82,23 @@ RAG prototype for extracting Georgian PDF documents and answering grounded quest
 .\venv\Scripts\python.exe -m pytest -m integration
 ```
 
-Changing `EMBEDDING_MODEL` or `EMBEDDING_SIZE` requires a compatible Qdrant collection and re-indexing all documents.
+The default suite needs no Qdrant, Ollama, Tesseract, or model download: it uses an in-memory SQLite engine, `QdrantClient(":memory:")`, and fakes. Tests marked `integration` require a running Ollama with the configured model and skip themselves cleanly when it is unavailable.
+
+The two `test_embeddings.py` tests that load the real `BAAI/bge-m3` model are opt-in via `RUN_REAL_MODEL_TESTS=1`. Loading that model on Windows can abort the interpreter with `Windows fatal exception: access violation` inside `torch`, which is a hard crash rather than a Python exception, so the tests must skip before the model is touched:
+
+```powershell
+$env:RUN_REAL_MODEL_TESTS = "1"
+.\venv\Scripts\python.exe -m pytest -m integration
+```
+
+Lint and format:
+
+```powershell
+.\venv\Scripts\python.exe -m ruff check .
+.\venv\Scripts\python.exe -m black --check .
+```
+
+## Operational notes
+
+- SQLite and Qdrant are not updated atomically. Ingestion writes the new chunks and vectors first and only removes the previous chunk rows once indexing succeeds; on failure it rolls the session back and restores the previous vectors.
+- `main.py preflight` validates the schema, Qdrant, the Ollama model, and Tesseract language data, so a misconfigured deployment fails at startup with a readable message instead of part-way through indexing.

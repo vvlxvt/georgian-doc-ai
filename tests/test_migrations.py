@@ -1,11 +1,9 @@
 from pathlib import Path
 
 import pytest
+from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
-
-alembic = pytest.importorskip("alembic")
-from alembic.config import Config
 
 from alembic import command
 from app.models import Document, DocumentPage

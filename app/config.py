@@ -22,5 +22,9 @@ class Settings(BaseSettings):
 
     tesseract_languages: str = "kat+eng"
 
+    chunk_max_length: int = 1000
+    chunk_overlap: int = 100
+    min_text_length: int = 20
+
 
 settings = Settings()

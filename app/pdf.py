@@ -11,7 +11,6 @@ class PDFPage:
     page_number: int
     text: str
     content_hash: str
-    _doc_path: str
 
 
 class PDFReader:
