@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     openrouter_supports_structured_output: bool = False
     openrouter_supports_json_mode: bool = False
     openrouter_supports_streaming: bool = False
+    llm_max_attempts: int = Field(default=2, ge=1, le=3)
+    llm_total_timeout: float = Field(default=180.0, gt=0, le=300)
 
     tesseract_languages: str = "kat+eng"
 

@@ -93,7 +93,7 @@ def test_reset_application_services_creates_fresh_pipeline(monkeypatch):
 
 def test_get_llm_service_passes_openrouter_settings(monkeypatch):
     from app.config import Settings
-    from app.llm import LLMCapabilities
+    from app.llm import LLMCapabilities, LLMRetryPolicy
 
     constructor_args = {}
 
@@ -112,6 +112,8 @@ def test_get_llm_service_passes_openrouter_settings(monkeypatch):
             openrouter_connect_timeout=4.0,
             openrouter_read_timeout=30.0,
             openrouter_supports_structured_output=True,
+            llm_max_attempts=3,
+            llm_total_timeout=90.0,
             _env_file=None,
         ),
     )
@@ -132,12 +134,14 @@ def test_get_llm_service_passes_openrouter_settings(monkeypatch):
         "connect_timeout": 4.0,
         "read_timeout": 30.0,
         "capabilities": LLMCapabilities(supports_structured_output=True),
+        "retry_policy": LLMRetryPolicy(max_attempts=3, total_timeout=90.0),
     }
     dependencies.reset_application_services()
 
 
 def test_get_llm_service_selects_ollama_when_explicitly_configured(monkeypatch):
     from app.config import Settings
+    from app.llm import LLMRetryPolicy
 
     selected = []
 
@@ -152,6 +156,8 @@ def test_get_llm_service_selects_ollama_when_explicitly_configured(monkeypatch):
             llm_provider="ollama",
             ollama_url="http://ollama.example:11434",
             ollama_model="test-model",
+            llm_max_attempts=1,
+            llm_total_timeout=30.0,
             _env_file=None,
         ),
     )
@@ -165,6 +171,7 @@ def test_get_llm_service_selects_ollama_when_explicitly_configured(monkeypatch):
         {
             "model": "test-model",
             "base_url": "http://ollama.example:11434",
+            "retry_policy": LLMRetryPolicy(max_attempts=1, total_timeout=30.0),
         }
     ]
     dependencies.reset_application_services()

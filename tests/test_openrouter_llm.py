@@ -8,6 +8,7 @@ from app.llm import (
     LLMError,
     LLMErrorCategory,
     LLMRequest,
+    LLMRetryPolicy,
     LLMUsage,
     OpenRouterLLMService,
 )
@@ -61,7 +62,7 @@ def test_openrouter_llm_service_returns_text(monkeypatch):
     monkeypatch.setattr(
         llm,
         "_post",
-        lambda payload: FakeResponse(
+        lambda payload, timeout: FakeResponse(
             {
                 "choices": [{"message": {"content": "Ответ от OpenRouter"}}],
                 "id": "r1",
@@ -85,8 +86,13 @@ def test_openrouter_llm_service_rejects_missing_answer_text(monkeypatch):
         model="test-model",
         base_url="http://testserver",
         api_key="test-key",
+        retry_policy=LLMRetryPolicy(max_attempts=1),
     )
-    monkeypatch.setattr(llm, "_post", lambda payload: FakeResponse({"choices": []}))
+    monkeypatch.setattr(
+        llm,
+        "_post",
+        lambda payload, timeout: FakeResponse({"choices": []}),
+    )
 
     try:
         llm.call(LLMRequest(prompt="Привет"))
@@ -106,7 +112,7 @@ def test_openrouter_llm_service_maps_authentication_error(monkeypatch):
     monkeypatch.setattr(
         llm,
         "_post",
-        lambda payload: FakeResponse({}, status_code=401),
+        lambda payload, timeout: FakeResponse({}, status_code=401),
     )
 
     try:
@@ -123,7 +129,9 @@ def test_openrouter_llm_service_requires_key_before_network(monkeypatch):
     monkeypatch.setattr(
         llm,
         "_post",
-        lambda payload: pytest.fail("Request must not be sent without an API key"),
+        lambda payload, timeout: pytest.fail(
+            "Request must not be sent without an API key"
+        ),
     )
 
     with pytest.raises(LLMError) as exc_info:
@@ -151,11 +159,12 @@ def test_openrouter_llm_service_maps_provider_status(
         model="test-model",
         base_url="http://testserver",
         api_key="test-key",
+        retry_policy=LLMRetryPolicy(max_attempts=1),
     )
     monkeypatch.setattr(
         llm,
         "_post",
-        lambda payload: FakeResponse({}, status_code=status_code),
+        lambda payload, timeout: FakeResponse({}, status_code=status_code),
     )
 
     with pytest.raises(LLMError) as exc_info:
@@ -282,7 +291,7 @@ def test_openrouter_maps_provider_refusal_to_neutral_response(monkeypatch):
     monkeypatch.setattr(
         llm,
         "_post",
-        lambda payload: FakeResponse(
+        lambda payload, timeout: FakeResponse(
             {"choices": [{"message": {"content": None, "refusal": "Not allowed"}}]}
         ),
     )
@@ -296,7 +305,7 @@ def test_openrouter_maps_provider_refusal_to_neutral_response(monkeypatch):
 @pytest.mark.parametrize(
     ("exception", "category"),
     [
-        (httpx.ConnectTimeout("connect"), LLMErrorCategory.TIMEOUT),
+        (httpx.ConnectTimeout("connect"), LLMErrorCategory.CONNECTION),
         (httpx.ReadTimeout("read"), LLMErrorCategory.OUTCOME_UNKNOWN),
     ],
 )
@@ -309,9 +318,10 @@ def test_openrouter_llm_service_maps_network_timeouts(
         model="test-model",
         base_url="http://testserver",
         api_key="test-key",
+        retry_policy=LLMRetryPolicy(max_attempts=1),
     )
 
-    def fail(payload):
+    def fail(payload, timeout):
         raise exception
 
     monkeypatch.setattr(llm, "_post", fail)

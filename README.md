@@ -98,6 +98,8 @@ All operational settings are environment-backed; see `.env.example` for the full
 | `EMBEDDING_MODEL` | `BAAI/bge-m3` | |
 | `EMBEDDING_SIZE` | `1024` | Must match the Qdrant collection |
 | `LLM_PROVIDER` | `openrouter` | `openrouter` or `ollama`; there is no provider fallback |
+| `LLM_MAX_ATTEMPTS` | `2` | Total attempts, including the first; range 1-3 |
+| `LLM_TOTAL_TIMEOUT` | `180.0` | Overall request budget in seconds; maximum 300 |
 | `OLLAMA_URL` | `http://localhost:11434` | |
 | `OLLAMA_MODEL` | `llama3.2:3b` | |
 | `OPENROUTER_URL` | `https://api.openrouter.ai` | Base URL; the adapter uses `/api/v1/chat/completions` |
@@ -162,3 +164,5 @@ Lint and format:
 
 - SQLite and Qdrant are not updated atomically. Ingestion writes the new chunks and vectors first and only removes the previous chunk rows once indexing succeeds; on failure it rolls the session back and restores the previous vectors.
 - `main.py preflight` validates the schema, Qdrant, the selected LLM provider configuration, and Tesseract language data. For Ollama it checks the configured model; for OpenRouter it checks that the API key is configured without sending a live or potentially billable request.
+- LLM calls retry only safe connection-establishment failures and HTTP 429 responses, within the attempt and total-time limits. `Retry-After` is honored when valid. Read/write timeouts, connection loss after transmission, other HTTP statuses, and answer-validation failures are not retried; an unknown outcome may mean the provider processed the request.
+- `/ask` maps typed provider errors to safe Russian guidance and logs provider, model, error category, attempts, elapsed time, and the provider request ID when available. It never logs the API key, question, retrieved text, prompt, or model response.

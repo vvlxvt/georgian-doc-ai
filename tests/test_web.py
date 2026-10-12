@@ -404,6 +404,98 @@ def test_question_form_reports_rag_failure_without_internal_details(
     assert "private internal details" not in response.text
 
 
+def test_question_form_maps_llm_failure_and_logs_only_safe_metadata(
+    web_session_factory,
+    monkeypatch,
+):
+    from app import dependencies, web_routes
+    from app.llm import LLMError, LLMErrorCategory
+
+    log_records = []
+
+    class BrokenRAGPipeline:
+        def answer(self, question):
+            raise LLMError(
+                LLMErrorCategory.RATE_LIMIT,
+                "raw provider body and secret token",
+                provider="openrouter",
+                model="test-model",
+                provider_request_id="request-123",
+                attempts=2,
+                duration_seconds=1.25,
+            )
+
+    monkeypatch.setattr(
+        dependencies,
+        "create_rag_pipeline",
+        lambda: BrokenRAGPipeline(),
+    )
+    monkeypatch.setattr(
+        web_routes.logger,
+        "warning",
+        lambda message, *, extra: log_records.append((message, extra)),
+    )
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.post(
+            "/ask",
+            data={"question": "private question text"},
+        )
+
+    assert response.status_code == 503
+    assert "ограничил частоту запросов" in response.text
+    assert "raw provider body" not in response.text
+    assert log_records == [
+        (
+            "LLM question processing failed",
+            {
+                "llm_provider": "openrouter",
+                "llm_model": "test-model",
+                "llm_category": "rate_limit",
+                "llm_attempts": 2,
+                "llm_duration_seconds": 1.25,
+                "llm_request_id": "request-123",
+            },
+        )
+    ]
+    assert "private question text" not in repr(log_records)
+    assert "raw provider body" not in repr(log_records)
+    assert "secret token" not in repr(log_records)
+
+
+def test_question_form_warns_before_retrying_unknown_outcome(
+    web_session_factory,
+    monkeypatch,
+):
+    from app import dependencies
+    from app.llm import LLMError, LLMErrorCategory
+
+    class BrokenRAGPipeline:
+        def answer(self, question):
+            raise LLMError(
+                LLMErrorCategory.OUTCOME_UNKNOWN,
+                "private transport detail",
+                provider="openrouter",
+                model="test-model",
+            )
+
+    monkeypatch.setattr(
+        dependencies,
+        "create_rag_pipeline",
+        lambda: BrokenRAGPipeline(),
+    )
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.post("/ask", data={"question": "Каков срок?"})
+
+    assert response.status_code == 503
+    assert "провайдер мог его обработать" in response.text
+    assert "Проверьте лимит расходов" in response.text
+    assert "private transport detail" not in response.text
+
+
 def test_question_form_rejects_document_ids_not_in_database(
     web_session_factory,
     monkeypatch,

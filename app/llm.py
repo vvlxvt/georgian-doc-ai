@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import math
+import random
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from email.utils import parsedate_to_datetime
 from enum import StrEnum
 from typing import Any
 
@@ -36,6 +41,10 @@ class LLMError(Exception):
         model: str,
         provider_request_id: str | None = None,
         status_code: int | None = None,
+        retryable: bool = False,
+        retry_after: str | None = None,
+        attempts: int = 0,
+        duration_seconds: float | None = None,
     ) -> None:
         super().__init__(message)
         self.category = category
@@ -43,6 +52,10 @@ class LLMError(Exception):
         self.model = model
         self.provider_request_id = provider_request_id
         self.status_code = status_code
+        self.retryable = retryable
+        self.retry_after = retry_after
+        self.attempts = attempts
+        self.duration_seconds = duration_seconds
 
 
 @dataclass(frozen=True)
@@ -70,6 +83,27 @@ class LLMCapabilities:
 
 
 @dataclass(frozen=True)
+class LLMRetryPolicy:
+    max_attempts: int = 2
+    total_timeout: float = 180.0
+    base_delay: float = 0.5
+    max_delay: float = 4.0
+
+    def __post_init__(self) -> None:
+        if self.max_attempts < 1:
+            raise ValueError("max_attempts must be greater than 0")
+        if not math.isfinite(self.total_timeout) or self.total_timeout <= 0:
+            raise ValueError("total_timeout must be greater than 0")
+        if (
+            not math.isfinite(self.base_delay)
+            or not math.isfinite(self.max_delay)
+            or self.base_delay < 0
+            or self.max_delay < 0
+        ):
+            raise ValueError("retry delays must be finite and nonnegative")
+
+
+@dataclass(frozen=True)
 class LLMResponse:
     text: str
     provider: str
@@ -78,6 +112,15 @@ class LLMResponse:
     cost: Decimal | None = None
     provider_request_id: str | None = None
     refused: bool = False
+    attempts: int = 1
+    duration_seconds: float | None = None
+
+
+@dataclass(frozen=True)
+class _PostResult:
+    response: httpx.Response
+    attempts: int
+    duration_seconds: float
 
 
 class LLMService(ABC):
@@ -96,14 +139,103 @@ class LLMService(ABC):
 
 
 def _post_with_error_mapping(
-    post: Callable[[dict[str, Any]], httpx.Response],
+    post: Callable[[dict[str, Any], float], httpx.Response],
     payload: dict[str, Any],
     *,
     provider: str,
     model: str,
+    retry_policy: LLMRetryPolicy = LLMRetryPolicy(),
+    sleep: Callable[[float], None] | None = None,
+    monotonic: Callable[[], float] | None = None,
+    jitter: Callable[[], float] | None = None,
+) -> _PostResult:
+    sleep = sleep or time.sleep
+    monotonic = monotonic or time.monotonic
+    jitter = jitter or random.random
+    started_at = monotonic()
+    last_error: LLMError | None = None
+
+    for attempt in range(1, retry_policy.max_attempts + 1):
+        remaining = retry_policy.total_timeout - (monotonic() - started_at)
+        if remaining <= 0:
+            if last_error is not None:
+                raise _with_attempt_details(
+                    last_error,
+                    attempts=attempt - 1,
+                    started_at=started_at,
+                    monotonic=monotonic,
+                )
+            raise LLMError(
+                LLMErrorCategory.TIMEOUT,
+                "The total LLM request time limit was reached.",
+                provider=provider,
+                model=model,
+                attempts=attempt - 1,
+                duration_seconds=monotonic() - started_at,
+            )
+
+        try:
+            response = _post_once(
+                post,
+                payload,
+                timeout=remaining,
+                provider=provider,
+                model=model,
+            )
+        except LLMError as exc:
+            last_error = exc
+            if not exc.retryable or attempt >= retry_policy.max_attempts:
+                raise _with_attempt_details(
+                    exc,
+                    attempts=attempt,
+                    started_at=started_at,
+                    monotonic=monotonic,
+                ) from exc
+            delay = _retry_delay(
+                exc,
+                attempt=attempt,
+                policy=retry_policy,
+                jitter=jitter,
+            )
+            if delay >= remaining:
+                raise _with_attempt_details(
+                    exc,
+                    attempts=attempt,
+                    started_at=started_at,
+                    monotonic=monotonic,
+                ) from exc
+            sleep(delay)
+            continue
+
+        duration_seconds = monotonic() - started_at
+        if duration_seconds > retry_policy.total_timeout:
+            raise LLMError(
+                LLMErrorCategory.OUTCOME_UNKNOWN,
+                "The total LLM request time limit was reached after transmission.",
+                provider=provider,
+                model=model,
+                attempts=attempt,
+                duration_seconds=duration_seconds,
+            )
+        return _PostResult(
+            response=response,
+            attempts=attempt,
+            duration_seconds=duration_seconds,
+        )
+
+    raise AssertionError("Retry loop exited without a response or LLM error.")
+
+
+def _post_once(
+    post: Callable[[dict[str, Any], float], httpx.Response],
+    payload: dict[str, Any],
+    *,
+    timeout: float,
+    provider: str,
+    model: str,
 ) -> httpx.Response:
     try:
-        response = post(payload)
+        response = post(payload, timeout)
     except httpx.HTTPStatusError as exc:
         raise _mapped_http_error(
             exc,
@@ -116,11 +248,27 @@ def _post_with_error_mapping(
             "Could not connect to the LLM provider.",
             provider=provider,
             model=model,
+            retryable=True,
+        ) from exc
+    except httpx.ConnectTimeout as exc:
+        raise LLMError(
+            LLMErrorCategory.CONNECTION,
+            "Could not connect to the LLM provider before the connection timeout.",
+            provider=provider,
+            model=model,
+            retryable=True,
         ) from exc
     except (httpx.ReadTimeout, httpx.WriteTimeout) as exc:
         raise LLMError(
             LLMErrorCategory.OUTCOME_UNKNOWN,
             "The provider request outcome is unknown after a network timeout.",
+            provider=provider,
+            model=model,
+        ) from exc
+    except (httpx.ReadError, httpx.WriteError, httpx.RemoteProtocolError) as exc:
+        raise LLMError(
+            LLMErrorCategory.OUTCOME_UNKNOWN,
+            "The provider request outcome is unknown after a network failure.",
             provider=provider,
             model=model,
         ) from exc
@@ -152,6 +300,68 @@ def _post_with_error_mapping(
     return response
 
 
+def _with_attempt_details(
+    error: LLMError,
+    *,
+    attempts: int,
+    started_at: float,
+    monotonic: Callable[[], float],
+) -> LLMError:
+    return LLMError(
+        error.category,
+        str(error),
+        provider=error.provider,
+        model=error.model,
+        provider_request_id=error.provider_request_id,
+        status_code=error.status_code,
+        retryable=error.retryable,
+        retry_after=error.retry_after,
+        attempts=attempts,
+        duration_seconds=max(0.0, monotonic() - started_at),
+    )
+
+
+def _retry_delay(
+    error: LLMError,
+    *,
+    attempt: int,
+    policy: LLMRetryPolicy,
+    jitter: Callable[[], float],
+) -> float:
+    retry_after = _retry_after_seconds(error.retry_after)
+    if retry_after is not None:
+        return retry_after
+
+    ceiling = min(policy.max_delay, policy.base_delay * (2 ** (attempt - 1)))
+    jitter_value = jitter()
+    if not math.isfinite(jitter_value):
+        jitter_value = 0.0
+    return ceiling * min(1.0, max(0.0, jitter_value))
+
+
+def _retry_after_seconds(
+    value: str | None,
+    *,
+    now: datetime | None = None,
+) -> float | None:
+    if value is None:
+        return None
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=UTC)
+        current_time = now or datetime.now(UTC)
+        seconds = (retry_at - current_time).total_seconds()
+    if not math.isfinite(seconds) or seconds < 0:
+        return None
+    return seconds
+
+
 def _mapped_http_error(
     exc: httpx.HTTPStatusError,
     *,
@@ -164,12 +374,20 @@ def _mapped_http_error(
         if exc.response is not None
         else getattr(response, "status_code", None)
     )
+    headers = getattr(response, "headers", {})
+    if exc.response is not None:
+        headers = exc.response.headers
+    retry_after = headers.get("retry-after") if headers else None
+    provider_request_id = headers.get("x-request-id") if headers else None
     return LLMError(
         _http_error_category(status_code),
         f"The LLM provider returned HTTP {status_code or 'error'}.",
         provider=provider,
         model=model,
         status_code=status_code,
+        retryable=status_code == 429,
+        retry_after=retry_after,
+        provider_request_id=provider_request_id,
     )
 
 
@@ -194,6 +412,8 @@ def _response_data(
     *,
     provider: str,
     model: str,
+    attempts: int = 1,
+    duration_seconds: float | None = None,
 ) -> dict[str, Any]:
     try:
         data = response.json()
@@ -203,6 +423,9 @@ def _response_data(
             "The LLM provider returned invalid JSON.",
             provider=provider,
             model=model,
+            provider_request_id=getattr(response, "headers", {}).get("x-request-id"),
+            attempts=attempts,
+            duration_seconds=duration_seconds,
         ) from exc
 
     if not isinstance(data, dict):
@@ -211,6 +434,9 @@ def _response_data(
             "The LLM provider returned an invalid response.",
             provider=provider,
             model=model,
+            provider_request_id=getattr(response, "headers", {}).get("x-request-id"),
+            attempts=attempts,
+            duration_seconds=duration_seconds,
         )
 
     return data
@@ -283,18 +509,24 @@ class OllamaLLMService(LLMService):
         model: str = "llama3.2:3b",
         base_url: str = "http://localhost:11434",
         timeout: float = 120.0,
+        retry_policy: LLMRetryPolicy | None = None,
     ):
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.retry_policy = retry_policy or LLMRetryPolicy()
         self.capabilities = LLMCapabilities()
 
-    def _post(self, payload: dict[str, Any]) -> httpx.Response:
+    def _post(
+        self,
+        payload: dict[str, Any],
+        timeout_budget: float,
+    ) -> httpx.Response:
         """Single network seam, replaced by tests to avoid a live Ollama."""
         return httpx.post(
             f"{self.base_url}/api/generate",
             json=payload,
-            timeout=self.timeout,
+            timeout=min(self.timeout, timeout_budget),
         )
 
     def call(self, request: LLMRequest) -> LLMResponse:
@@ -316,8 +548,17 @@ class OllamaLLMService(LLMService):
             payload,
             provider=self.provider,
             model=self.model,
+            retry_policy=self.retry_policy,
         )
-        data = _response_data(response, provider=self.provider, model=self.model)
+        post_result = response
+        response = post_result.response
+        data = _response_data(
+            response,
+            provider=self.provider,
+            model=self.model,
+            attempts=post_result.attempts,
+            duration_seconds=post_result.duration_seconds,
+        )
         text = data.get("response")
         if not isinstance(text, str) or not text.strip():
             raise LLMError(
@@ -325,6 +566,8 @@ class OllamaLLMService(LLMService):
                 "The LLM provider response did not contain answer text.",
                 provider=self.provider,
                 model=self.model,
+                attempts=post_result.attempts,
+                duration_seconds=post_result.duration_seconds,
             )
 
         return LLMResponse(
@@ -332,6 +575,8 @@ class OllamaLLMService(LLMService):
             provider=self.provider,
             model=self.model,
             usage=_ollama_usage_from_payload(data),
+            attempts=post_result.attempts,
+            duration_seconds=post_result.duration_seconds,
         )
 
 
@@ -346,6 +591,7 @@ class OpenRouterLLMService(LLMService):
         connect_timeout: float = 10.0,
         read_timeout: float = 120.0,
         capabilities: LLMCapabilities | None = None,
+        retry_policy: LLMRetryPolicy | None = None,
     ):
         self.model = model
         self.base_url = base_url.rstrip("/")
@@ -353,16 +599,21 @@ class OpenRouterLLMService(LLMService):
         self.connect_timeout = connect_timeout
         self.read_timeout = read_timeout
         self.capabilities = capabilities or LLMCapabilities()
+        self.retry_policy = retry_policy or LLMRetryPolicy()
 
-    def _post(self, payload: dict[str, Any]) -> httpx.Response:
+    def _post(
+        self,
+        payload: dict[str, Any],
+        timeout_budget: float,
+    ) -> httpx.Response:
         headers = {}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         timeout = httpx.Timeout(
-            connect=self.connect_timeout,
-            read=self.read_timeout,
-            write=self.read_timeout,
-            pool=self.connect_timeout,
+            connect=min(self.connect_timeout, timeout_budget),
+            read=min(self.read_timeout, timeout_budget),
+            write=min(self.read_timeout, timeout_budget),
+            pool=min(self.connect_timeout, timeout_budget),
         )
         return httpx.post(
             f"{self.base_url}/api/v1/chat/completions",
@@ -406,8 +657,17 @@ class OpenRouterLLMService(LLMService):
             payload,
             provider=self.provider,
             model=self.model,
+            retry_policy=self.retry_policy,
         )
-        data = _response_data(response, provider=self.provider, model=self.model)
+        post_result = response
+        response = post_result.response
+        data = _response_data(
+            response,
+            provider=self.provider,
+            model=self.model,
+            attempts=post_result.attempts,
+            duration_seconds=post_result.duration_seconds,
+        )
         choices = data.get("choices")
         content: Any = None
         refused = False
@@ -424,6 +684,8 @@ class OpenRouterLLMService(LLMService):
                 provider_request_id=_request_id(data, response),
                 usage=_usage_from_payload(data.get("usage")),
                 refused=True,
+                attempts=post_result.attempts,
+                duration_seconds=post_result.duration_seconds,
             )
         if isinstance(content, dict):
             content = content.get("text")
@@ -433,6 +695,9 @@ class OpenRouterLLMService(LLMService):
                 "The LLM provider response did not contain answer text.",
                 provider=self.provider,
                 model=self.model,
+                provider_request_id=_request_id(data, response),
+                attempts=post_result.attempts,
+                duration_seconds=post_result.duration_seconds,
             )
 
         request_id = _request_id(data, response)
@@ -446,6 +711,8 @@ class OpenRouterLLMService(LLMService):
             usage=_usage_from_payload(usage),
             cost=_cost_from_payload(cost),
             provider_request_id=request_id,
+            attempts=post_result.attempts,
+            duration_seconds=post_result.duration_seconds,
         )
 
 

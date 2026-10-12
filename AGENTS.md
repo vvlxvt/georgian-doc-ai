@@ -211,6 +211,8 @@ mirrored in `.env.example`. `Settings` is frozen and `extra="ignore"`.
 | `OPENROUTER_SUPPORTS_STRUCTURED_OUTPUT` | `false` |
 | `OPENROUTER_SUPPORTS_JSON_MODE` | `false` |
 | `OPENROUTER_SUPPORTS_STREAMING` | `false` |
+| `LLM_MAX_ATTEMPTS` | `2` | Total attempts, range 1-3 |
+| `LLM_TOTAL_TIMEOUT` | `180.0` | Total request budget in seconds, max 300 |
 | `TESSERACT_LANGUAGES` | `kat+eng` |
 | `CHUNK_MAX_LENGTH` | `1000` | Characters, not tokens |
 | `CHUNK_OVERLAP` | `100` | Words of overlap |

@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.llm import LLMError, LLMErrorCategory
 from app.models import Document, PageStatus
 from app.web_dependencies import get_session
 
@@ -25,6 +26,40 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 TEMPLATE_DIRECTORY = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATE_DIRECTORY)
+
+
+def _llm_failure_message(error: LLMError) -> str:
+    if error.category is LLMErrorCategory.AUTHENTICATION:
+        return "Проверьте настройку ключа доступа к выбранному LLM-провайдеру."
+    if error.category is LLMErrorCategory.INSUFFICIENT_CREDITS:
+        return "Проверьте баланс и лимиты аккаунта LLM-провайдера."
+    if error.category is LLMErrorCategory.RATE_LIMIT:
+        return "Провайдер ограничил частоту запросов. Повторите попытку позже."
+    if error.category is LLMErrorCategory.CONTEXT_LENGTH:
+        return "Сократите вопрос или уменьшите объём найденного контекста."
+    if error.category is LLMErrorCategory.OUTCOME_UNKNOWN:
+        return (
+            "Результат запроса не подтверждён: провайдер мог его обработать. "
+            "Проверьте лимит расходов перед повторной отправкой."
+        )
+    if error.category is LLMErrorCategory.TIMEOUT:
+        return "Превышен лимит времени запроса. Проверьте доступность провайдера."
+    if error.category is LLMErrorCategory.CONNECTION:
+        return "Не удалось подключиться к LLM-провайдеру. Проверьте его доступность."
+    if error.category in {
+        LLMErrorCategory.INVALID_REQUEST,
+        LLMErrorCategory.UNSUPPORTED_CAPABILITY,
+    }:
+        return "Проверьте модель и параметры выбранного LLM-провайдера."
+    if error.category in {
+        LLMErrorCategory.INVALID_RESPONSE,
+        LLMErrorCategory.REFUSAL,
+        LLMErrorCategory.VALIDATION,
+    }:
+        return (
+            "Ответ провайдера не прошёл проверку. Попробуйте переформулировать вопрос."
+        )
+    return "Не удалось получить ответ от LLM-провайдера. Проверьте его доступность."
 
 
 @router.get("/", name="home")
@@ -229,6 +264,20 @@ def ask_question(
                 )
             else:
                 answer = rag_pipeline.answer(question=question)
+        except LLMError as exc:
+            logger.warning(
+                "LLM question processing failed",
+                extra={
+                    "llm_provider": exc.provider,
+                    "llm_model": exc.model,
+                    "llm_category": exc.category.value,
+                    "llm_attempts": exc.attempts,
+                    "llm_duration_seconds": exc.duration_seconds,
+                    "llm_request_id": exc.provider_request_id,
+                },
+            )
+            error = _llm_failure_message(exc)
+            status_code = 503
         except Exception:
             logger.exception("RAG question processing failed")
             error = "Не удалось получить ответ. Проверьте доступность служб."

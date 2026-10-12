@@ -9,19 +9,22 @@
   `RAGPipeline` passes results through `ContextBuilder` and `AnswerGenerator`.
 - `LLMService` uses typed `LLMRequest`/`LLMResponse` contracts and preserves
   `generate(prompt: str) -> str` for compatibility. Ollama and OpenRouter
-  adapters use `httpx` with a test seam at `_post`.
+  adapters use `httpx` with a test seam at `_post`; retry attempts and elapsed
+  time are included in response/error metadata.
 - `AnswerGenerator` owns a Russian-language prompt, page-citation instructions,
   and untrusted-source markers. It returns a fixed insufficient-information
-  sentence without calling the LLM when the context is empty. It does not
-  parse a response schema or validate citations.
+  sentence without calling the LLM when the context is empty. It validates a
+  structured response and cited request-local source IDs before rendering
+  page-number citations.
 - Qdrant results contain chunk IDs and payload metadata including
   `document_id`, `page_id`, `page_number`, `chunk_index`, and text. The context
   currently renders page numbers and text but not stable application-issued
   source identifiers.
 - The local FastAPI/Jinja UI has a synchronous `/ask` form, selected-document
-  filtering, pending UI feedback, and generic safe failure text. It has no
-  JSON API, question history, job-status endpoint, authentication, or
-  background task queue.
+  filtering, pending UI feedback, category-specific safe error guidance, and
+  structured LLM failure logs that omit prompts, source text, credentials, and
+  provider response bodies. It has no JSON API, question history, job-status
+  endpoint, authentication, or background task queue.
 - SQLite currently stores documents, pages, and chunks only. Schema changes
   use Alembic; the sole existing revision is defensive/idempotent for legacy
   databases. Request-scoped database sessions and SQLAlchemy repositories are
@@ -44,29 +47,30 @@ Do not schedule duplicate work for:
 - Russian answer instructions, page citation format, untrusted-source
   boundary wording, and the empty-context no-LLM behavior.
 - Local UI forms, question input validation, document selection, pending
-  indication, generic safe error display, and same-origin POST checks.
+  indication, safe error display, and same-origin POST checks.
 - General environment-backed settings, dependency injection, migrations,
   pytest fixtures, and existing lint/test commands.
 
-### Missing capabilities
+### Completed capabilities and deferred items
 
 - OpenRouter adapter and explicit provider selection/configuration.
-- A provider-neutral request/response/usage/error contract rich enough to
-  retain provider request IDs and optional token/cost metadata.
-- Application-level error classification, bounded retry policy, and safe
-  user-facing mapping.
+- Provider-neutral request/response/usage/error contract with provider
+  request IDs and optional token/cost metadata.
 - Prompt version metadata, structured output parsing, and validation of
-  citations against the exact retrieved chunks.
-- Optional durable LLM run/result records, retention policy, and persistence
-  failure behavior.
-- Actionable web error states and observability beyond the current generic
-  route-level exception handling.
+  citations against the exact retrieved chunks are implemented.
+- Bounded retry behavior and actionable web error states are implemented;
+- Durable LLM run/result records, retention policy, and persistence failure
+  handling remain unimplemented because persistence was explicitly declined.
 
 ### Risks and constraints
 
 - OpenRouter calls may incur charges. A timeout after request transmission
   does not prove the provider did not process the request; never blindly retry
   ambiguous outcomes or silently switch provider/model.
+- Retry only connection-establishment failures and HTTP 429 responses within
+  configured attempt/time bounds. Honor valid `Retry-After` values; do not
+  retry auth, quota, invalid requests, 5xx, read/write failures after
+  transmission, or response-validation errors.
 - Structured-output support is model-dependent. OpenRouter documents
   `response_format`, but the selected model's actual support must be checked
   and configured explicitly; local parsing/validation remains mandatory.
@@ -87,9 +91,8 @@ Do not schedule duplicate work for:
 - Branch: `master`.
 - Latest commit at inspection: `9f54922 feat: add local web UI and document-scoped search`.
 - Existing user changes left untouched: `data/app.db` and `prompt.txt`.
-- Latest recorded verification for the current code: `131 passed, 3 deselected`
-  with `pytest -m "not integration"`; Ruff and Black passed. This was recorded
-  before this planning document was created and was not rerun for planning.
+- Latest verification before task 6: `180 passed, 3 deselected` with
+  `pytest -m "not integration"`; Ruff and Black passed.
 - Commit convention: descriptive conventional-style commit subjects are
   already used. Each future implementation task should be committed
   separately, without staging pre-existing user files.
@@ -107,8 +110,7 @@ Do not schedule duplicate work for:
 - Provider API reference reviewed during planning (2026-10-12):
   [OpenRouter API reference](https://openrouter.ai/docs/api-reference/overview).
   It documents the chat-completions endpoint and optional structured-output
-  response format. Re-check current request, error, usage, model-capability,
-  and rate-limit documentation immediately before implementing the adapter.
+  response format; request/error handling was mocked and covered offline.
 
 ## Architecture proposal
 
@@ -121,8 +123,8 @@ Do not schedule duplicate work for:
    provider registry: define small application-owned request/response/usage
    records and typed provider failures, then have the existing Ollama
    implementation and a focused OpenRouter adapter implement that boundary.
-3. Select exactly one configured provider in `app/dependencies.py`. Preserve
-   Ollama as the default. OpenRouter is opt-in through environment settings.
+3. Select exactly one configured provider in `app/dependencies.py`. OpenRouter
+   is the approved default. Ollama is available by explicit selection.
    Do not add automatic provider/model fallback.
 4. Keep prompt rendering and response validation in application code, not in
    the provider adapter. Version the prompt/schema in source or another
@@ -205,7 +207,7 @@ mode, context size, streaming, or token/cost metadata.
 - Blocked: none
 - Remaining: 2 (task 7 explicitly declined)
 - Latest test result: 180 passed, 3 deselected; Ruff and Black passed
-- Latest commit: `832d6f4`
+- Latest commit: `1e39bcb`
 
 ## Tasks
 
@@ -367,11 +369,11 @@ mode, context size, streaming, or token/cost metadata.
   result. Documentation states that citation membership is not proof of
   semantic entailment.
 * Commit message: `feat(rag): validate structured answers and citations`
-* Commit hash: recorded after commit
+* Commit hash: `1e39bcb`
 
 ### Task 6: Implementing bounded retries and actionable failure mapping
 
-* Status: `[ ]`
+* Status: `[x]`
 * Goal: Make transient failures explicit and retry only when a duplicate paid
   operation is acceptably unlikely.
 * Review/requirement: Requirements 6 and 7 of `prompt.txt`.
@@ -401,7 +403,7 @@ mode, context size, streaming, or token/cost metadata.
 * Definition of done: Attempts are bounded and observable; no nested retries
   exist; uncertain billable outcomes are not retried automatically.
 * Commit message: `feat(llm): add bounded retry and error policy`
-* Commit hash: pending
+* Commit hash: pending verification after commit
 
 ### Task 7: Persisting approved LLM run results
 
@@ -506,10 +508,10 @@ No product decisions remain open for the implementation queue.
 | No useful retrieved context | No | Fixed insufficient-information answer | Do not call provider |
 | Missing provider configuration / authentication | No | Configuration/authentication action | Do not expose key or response body |
 | Quota/credits exhausted | No | Provider account action | No model/provider fallback |
-| Rate limit with valid `Retry-After` | Bounded only if response is known rejected and within total budget | Busy/retry-later after exhaustion | Record attempt count and delay |
+| Rate limit with valid `Retry-After` | Bounded if response is rejected and delay fits total budget | Busy/retry-later after exhaustion | Honor the provider delay and record final attempt count |
 | Connect failure before request transmission | Bounded, per policy | Temporary service error after exhaustion | Safe retry with jitter |
-| Read timeout or connection lost after send | No by default | Outcome uncertain; retry manually only after warning | Avoid duplicate paid requests; retain safe run metadata if approved |
-| Provider 5xx/overload | Only when documented rejection is safe | Temporary service error | Bounded attempt budget; never nested |
+| Read/write timeout or connection lost after send | No | Outcome uncertain; show a duplicate-cost warning | Avoid duplicate paid requests |
+| Provider 5xx/overload | No | Temporary provider error | No retry because processing/rejection semantics may be ambiguous |
 | Invalid request/context too large | No | Request/context cannot be processed | Correct input or apply reviewed context trimming; no blind retry |
 | Malformed/truncated model output | No by default | Answer could not be validated | Do not display as grounded success; preserve evidence IDs if approved |
 | Unknown/malformed citation | No | Answer could not be validated | Reject invented references; do not render model-supplied URLs |

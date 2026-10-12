@@ -29,6 +29,8 @@ def test_settings_have_expected_defaults(monkeypatch):
     assert not config.openrouter_supports_structured_output
     assert not config.openrouter_supports_json_mode
     assert not config.openrouter_supports_streaming
+    assert config.llm_max_attempts == 2
+    assert config.llm_total_timeout == 180.0
     assert config.database_url == "sqlite:///data/app.db"
     assert config.tesseract_languages == "kat+eng"
     assert config.chunk_max_length == 1000
@@ -43,6 +45,8 @@ def test_settings_read_environment_overrides(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
     monkeypatch.setenv("OPENROUTER_CONNECT_TIMEOUT", "3.5")
     monkeypatch.setenv("OPENROUTER_SUPPORTS_JSON_MODE", "true")
+    monkeypatch.setenv("LLM_MAX_ATTEMPTS", "3")
+    monkeypatch.setenv("LLM_TOTAL_TIMEOUT", "90")
 
     config = Settings(_env_file=None)
 
@@ -52,6 +56,8 @@ def test_settings_read_environment_overrides(monkeypatch):
     assert config.llm_provider == "ollama"
     assert config.openrouter_connect_timeout == 3.5
     assert config.openrouter_supports_json_mode
+    assert config.llm_max_attempts == 3
+    assert config.llm_total_timeout == 90.0
 
 
 def test_settings_reject_unknown_llm_provider():
@@ -62,6 +68,15 @@ def test_settings_reject_unknown_llm_provider():
 def test_settings_reject_nonpositive_openrouter_timeout():
     with pytest.raises(ValidationError):
         Settings(openrouter_connect_timeout=0, _env_file=None)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("llm_max_attempts", 0), ("llm_max_attempts", 4), ("llm_total_timeout", 0)],
+)
+def test_settings_reject_invalid_llm_retry_limits(field, value):
+    with pytest.raises(ValidationError):
+        Settings(**{field: value}, _env_file=None)
 
 
 def test_settings_read_ingestion_overrides(monkeypatch):

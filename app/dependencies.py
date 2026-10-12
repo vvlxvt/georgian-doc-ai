@@ -10,6 +10,7 @@ from app.embeddings import HuggingFaceEmbeddingService
 from app.indexing import ChunkIndexer
 from app.llm import (
     LLMCapabilities,
+    LLMRetryPolicy,
     LLMService,
     OllamaLLMService,
     OpenRouterLLMService,
@@ -51,6 +52,10 @@ def get_llm_service() -> LLMService:
     Defaults to 'openrouter' when configured so in Settings.
     """
     provider = (settings.llm_provider or "").strip().lower()
+    retry_policy = LLMRetryPolicy(
+        max_attempts=settings.llm_max_attempts,
+        total_timeout=settings.llm_total_timeout,
+    )
 
     if provider == "openrouter":
         return OpenRouterLLMService(
@@ -66,12 +71,14 @@ def get_llm_service() -> LLMService:
                 supports_json_mode=settings.openrouter_supports_json_mode,
                 supports_streaming=settings.openrouter_supports_streaming,
             ),
+            retry_policy=retry_policy,
         )
 
     if provider == "ollama":
         return OllamaLLMService(
             model=settings.ollama_model,
             base_url=settings.ollama_url,
+            retry_policy=retry_policy,
         )
 
     raise ValueError(f"Unsupported LLM provider: {settings.llm_provider!r}")

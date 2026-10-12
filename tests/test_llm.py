@@ -1,3 +1,5 @@
+from datetime import UTC
+
 import httpx
 import pytest
 
@@ -6,16 +8,19 @@ from app.llm import (
     LLMError,
     LLMErrorCategory,
     LLMRequest,
-    LLMResponse,
+    LLMRetryPolicy,
     LLMService,
     OllamaLLMService,
+    _post_with_error_mapping,
+    _retry_after_seconds,
 )
 
 
 class FakeResponse:
-    def __init__(self, payload, status_code=200):
+    def __init__(self, payload, status_code=200, headers=None):
         self._payload = payload
         self.status_code = status_code
+        self.headers = headers or {}
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -49,7 +54,9 @@ def test_ollama_llm_service_returns_response_text(monkeypatch):
     monkeypatch.setattr(
         llm,
         "_post",
-        lambda payload: FakeResponse({"response": "Векторная база хранит эмбеддинги."}),
+        lambda payload, timeout: FakeResponse(
+            {"response": "Векторная база хранит эмбеддинги."}
+        ),
     )
 
     answer = llm.generate("Что такое векторная база?")
@@ -62,16 +69,16 @@ def test_ollama_llm_service_returns_provider_neutral_response(monkeypatch):
     monkeypatch.setattr(
         llm,
         "_post",
-        lambda payload: FakeResponse({"response": "Готово."}),
+        lambda payload, timeout: FakeResponse({"response": "Готово."}),
     )
 
     response = llm.call(LLMRequest(prompt="Вопрос"))
 
-    assert response == LLMResponse(
-        text="Готово.",
-        provider="ollama",
-        model="test-model",
-    )
+    assert response.text == "Готово."
+    assert response.provider == "ollama"
+    assert response.model == "test-model"
+    assert response.attempts == 1
+    assert response.duration_seconds is not None
     assert llm.capabilities == LLMCapabilities()
 
 
@@ -80,7 +87,7 @@ def test_ollama_llm_service_maps_available_usage_metadata(monkeypatch):
     monkeypatch.setattr(
         llm,
         "_post",
-        lambda payload: FakeResponse(
+        lambda payload, timeout: FakeResponse(
             {
                 "response": "Готово.",
                 "prompt_eval_count": 7,
@@ -103,7 +110,7 @@ def test_ollama_llm_service_combines_system_and_user_prompts(monkeypatch):
     monkeypatch.setattr(
         llm,
         "_post",
-        lambda payload: (
+        lambda payload, timeout: (
             payloads.append(payload) or FakeResponse({"response": "Ответ"})
         ),
     )
@@ -125,7 +132,11 @@ def test_ollama_llm_service_combines_system_and_user_prompts(monkeypatch):
 )
 def test_ollama_llm_service_rejects_missing_or_malformed_text(monkeypatch, payload):
     llm = OllamaLLMService(model="test-model", base_url="http://testserver")
-    monkeypatch.setattr(llm, "_post", lambda request: FakeResponse(payload))
+    monkeypatch.setattr(
+        llm,
+        "_post",
+        lambda request, timeout: FakeResponse(payload),
+    )
 
     with pytest.raises(LLMError) as exc_info:
         llm.call(LLMRequest(prompt="Вопрос"))
@@ -136,7 +147,7 @@ def test_ollama_llm_service_rejects_missing_or_malformed_text(monkeypatch, paylo
 def test_ollama_llm_service_maps_connection_failure(monkeypatch):
     llm = OllamaLLMService(model="test-model", base_url="http://testserver")
 
-    def fail(payload):
+    def fail(payload, timeout):
         raise httpx.ConnectError("sensitive request details")
 
     monkeypatch.setattr(llm, "_post", fail)
@@ -156,7 +167,7 @@ def test_ollama_llm_service_maps_invalid_json(monkeypatch):
         raise ValueError("raw response")
 
     response.json = invalid_json
-    monkeypatch.setattr(llm, "_post", lambda payload: response)
+    monkeypatch.setattr(llm, "_post", lambda payload, timeout: response)
 
     with pytest.raises(LLMError) as exc_info:
         llm.call(LLMRequest(prompt="Вопрос"))
@@ -168,7 +179,7 @@ def test_ollama_llm_service_maps_invalid_json(monkeypatch):
 def test_ollama_llm_service_propagates_http_error(monkeypatch):
     llm = OllamaLLMService(model="test-model", base_url="http://testserver")
 
-    def fail(payload):
+    def fail(payload, timeout):
         raise httpx.HTTPStatusError("Server error '500'", request=None, response=None)
 
     monkeypatch.setattr(llm, "_post", fail)
@@ -181,3 +192,177 @@ def test_ollama_llm_service_propagates_http_error(monkeypatch):
 def test_ollama_llm_service_is_integration_only():
     """The real service is only exercised under the integration marker."""
     assert OllamaLLMService().base_url.endswith("11434")
+
+
+def test_retry_policy_retries_safe_connection_failure_with_bounded_jitter():
+    now = [10.0]
+    calls = []
+    sleeps = []
+
+    def post(payload, timeout):
+        calls.append(timeout)
+        if len(calls) == 1:
+            now[0] += 0.1
+            raise httpx.ConnectError("private connection detail")
+        return FakeResponse({"response": "ok"})
+
+    result = _post_with_error_mapping(
+        post,
+        {},
+        provider="test",
+        model="test-model",
+        retry_policy=LLMRetryPolicy(
+            max_attempts=2,
+            total_timeout=5.0,
+            base_delay=1.0,
+            max_delay=2.0,
+        ),
+        sleep=lambda delay: (sleeps.append(delay), now.__setitem__(0, now[0] + delay)),
+        monotonic=lambda: now[0],
+        jitter=lambda: 0.25,
+    )
+
+    assert result.attempts == 2
+    assert result.duration_seconds == pytest.approx(0.35)
+    assert calls == pytest.approx([5.0, 4.65])
+    assert sleeps == [0.25]
+
+
+def test_retry_policy_honors_retry_after_for_rejected_rate_limited_request():
+    now = [0.0]
+    calls = []
+    sleeps = []
+
+    def post(payload, timeout):
+        calls.append(timeout)
+        if len(calls) == 1:
+            return FakeResponse(
+                {},
+                status_code=429,
+                headers={"retry-after": "2"},
+            )
+        return FakeResponse({"response": "ok"})
+
+    result = _post_with_error_mapping(
+        post,
+        {},
+        provider="openrouter",
+        model="test-model",
+        retry_policy=LLMRetryPolicy(max_attempts=2, total_timeout=5.0),
+        sleep=lambda delay: (sleeps.append(delay), now.__setitem__(0, now[0] + delay)),
+        monotonic=lambda: now[0],
+        jitter=lambda: 0.1,
+    )
+
+    assert result.attempts == 2
+    assert calls == [5.0, 3.0]
+    assert sleeps == [2.0]
+
+
+@pytest.mark.parametrize(
+    ("status_code", "category"),
+    [
+        (400, LLMErrorCategory.INVALID_REQUEST),
+        (401, LLMErrorCategory.AUTHENTICATION),
+        (402, LLMErrorCategory.INSUFFICIENT_CREDITS),
+        (500, LLMErrorCategory.UPSTREAM),
+    ],
+)
+def test_retry_policy_does_not_retry_nonretryable_http_status(status_code, category):
+    calls = []
+
+    def post(payload, timeout):
+        calls.append(timeout)
+        return FakeResponse({}, status_code=status_code)
+
+    with pytest.raises(LLMError) as exc_info:
+        _post_with_error_mapping(
+            post,
+            {},
+            provider="openrouter",
+            model="test-model",
+            retry_policy=LLMRetryPolicy(max_attempts=3),
+            sleep=lambda _: pytest.fail("Non-retryable responses must not sleep"),
+            jitter=lambda: 0.5,
+        )
+
+    assert len(calls) == 1
+    assert exc_info.value.category is category
+    assert exc_info.value.attempts == 1
+
+
+@pytest.mark.parametrize(
+    "exception",
+    [
+        httpx.ReadTimeout("read timeout"),
+        httpx.ReadError("read failure"),
+        httpx.WriteError("write failure"),
+        httpx.RemoteProtocolError("protocol failure"),
+    ],
+)
+def test_retry_policy_does_not_retry_ambiguous_network_outcomes(exception):
+    calls = []
+
+    def post(payload, timeout):
+        calls.append(timeout)
+        raise exception
+
+    with pytest.raises(LLMError) as exc_info:
+        _post_with_error_mapping(
+            post,
+            {},
+            provider="openrouter",
+            model="test-model",
+            retry_policy=LLMRetryPolicy(max_attempts=3),
+            sleep=lambda _: pytest.fail("Ambiguous outcomes must not sleep"),
+        )
+
+    assert len(calls) == 1
+    assert exc_info.value.category is LLMErrorCategory.OUTCOME_UNKNOWN
+    assert exc_info.value.attempts == 1
+    assert exception.args[0] not in str(exc_info.value)
+
+
+def test_retry_after_supports_http_dates_and_rejects_invalid_values():
+    from datetime import datetime
+
+    current_time = datetime(2026, 10, 12, 12, 0, tzinfo=UTC)
+
+    assert _retry_after_seconds("3.5") == 3.5
+    assert (
+        _retry_after_seconds(
+            "Mon, 12 Oct 2026 12:00:05 GMT",
+            now=current_time,
+        )
+        == 5.0
+    )
+    assert _retry_after_seconds("not-a-date") is None
+
+
+def test_retry_policy_does_not_exceed_remaining_total_time():
+    calls = []
+    sleeps = []
+
+    def post(payload, timeout):
+        calls.append(timeout)
+        return FakeResponse(
+            {},
+            status_code=429,
+            headers={"retry-after": "6"},
+        )
+
+    with pytest.raises(LLMError) as exc_info:
+        _post_with_error_mapping(
+            post,
+            {},
+            provider="openrouter",
+            model="test-model",
+            retry_policy=LLMRetryPolicy(max_attempts=3, total_timeout=5.0),
+            sleep=sleeps.append,
+            monotonic=lambda: 0.0,
+        )
+
+    assert len(calls) == 1
+    assert sleeps == []
+    assert exc_info.value.category is LLMErrorCategory.RATE_LIMIT
+    assert exc_info.value.attempts == 1

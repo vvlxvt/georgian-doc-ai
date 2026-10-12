@@ -233,4 +233,6 @@ class AnswerGenerator:
             provider=response.provider,
             model=response.model,
             provider_request_id=response.provider_request_id,
+            attempts=response.attempts,
+            duration_seconds=response.duration_seconds,
         )
