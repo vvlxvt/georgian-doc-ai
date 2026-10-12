@@ -138,6 +138,7 @@ def test_openrouter_llm_service_requires_key_before_network(monkeypatch):
         llm.call(LLMRequest(prompt="Привет"))
 
     assert exc_info.value.category is LLMErrorCategory.AUTHENTICATION
+    assert exc_info.value.attempts == 0
 
 
 @pytest.mark.parametrize(

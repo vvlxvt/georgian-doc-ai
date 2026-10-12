@@ -342,13 +342,15 @@ def test_retry_after_supports_http_dates_and_rejects_invalid_values():
 def test_retry_policy_does_not_exceed_remaining_total_time():
     calls = []
     sleeps = []
+    now = [0.0]
 
     def post(payload, timeout):
         calls.append(timeout)
+        now[0] = 2.0
         return FakeResponse(
             {},
             status_code=429,
-            headers={"retry-after": "6"},
+            headers={"retry-after": "4"},
         )
 
     with pytest.raises(LLMError) as exc_info:
@@ -359,7 +361,7 @@ def test_retry_policy_does_not_exceed_remaining_total_time():
             model="test-model",
             retry_policy=LLMRetryPolicy(max_attempts=3, total_timeout=5.0),
             sleep=sleeps.append,
-            monotonic=lambda: 0.0,
+            monotonic=lambda: now[0],
         )
 
     assert len(calls) == 1

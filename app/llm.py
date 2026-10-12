@@ -149,9 +149,9 @@ def _post_with_error_mapping(
     monotonic: Callable[[], float] | None = None,
     jitter: Callable[[], float] | None = None,
 ) -> _PostResult:
-    sleep = sleep or time.sleep
-    monotonic = monotonic or time.monotonic
-    jitter = jitter or random.random
+    sleep = time.sleep if sleep is None else sleep
+    monotonic = time.monotonic if monotonic is None else monotonic
+    jitter = random.random if jitter is None else jitter
     started_at = monotonic()
     last_error: LLMError | None = None
 
@@ -197,7 +197,10 @@ def _post_with_error_mapping(
                 policy=retry_policy,
                 jitter=jitter,
             )
-            if delay >= remaining:
+            remaining_after_attempt = retry_policy.total_timeout - (
+                monotonic() - started_at
+            )
+            if remaining_after_attempt <= 0 or delay >= remaining_after_attempt:
                 raise _with_attempt_details(
                     exc,
                     attempts=attempt,
