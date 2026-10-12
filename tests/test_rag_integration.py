@@ -1,3 +1,4 @@
+import os
 from uuid import uuid4
 
 import httpx
@@ -8,7 +9,7 @@ from app.answer import AnswerGenerator
 from app.config import settings
 from app.context import ContextBuilder
 from app.embeddings import EmbeddingService
-from app.llm import OllamaLLMService
+from app.llm import LLMRequest, LLMRetryPolicy, OllamaLLMService, OpenRouterLLMService
 from app.qdrant_store import QdrantVectorStore
 from app.rag import RAGPipeline
 from app.retrieval import Retriever
@@ -81,3 +82,31 @@ def test_rag_pipeline_with_real_ollama():
 
     assert "год" in answer.lower()
     assert "[стр. 1]" in answer
+
+
+@pytest.mark.integration
+def test_openrouter_provider_smoke():
+    if os.environ.get("RUN_OPENROUTER_TESTS") != "1":
+        pytest.skip("Set RUN_OPENROUTER_TESTS=1 to allow a billable OpenRouter call")
+    if not settings.openrouter_api_key.strip():
+        pytest.skip("OPENROUTER_API_KEY is not configured")
+
+    llm = OpenRouterLLMService(
+        model=settings.openrouter_model,
+        base_url=settings.openrouter_url,
+        api_key=settings.openrouter_api_key,
+        connect_timeout=settings.openrouter_connect_timeout,
+        read_timeout=settings.openrouter_read_timeout,
+        retry_policy=LLMRetryPolicy(
+            max_attempts=settings.llm_max_attempts,
+            total_timeout=settings.llm_total_timeout,
+        ),
+    )
+    response = llm.call(
+        LLMRequest(
+            system_prompt="Reply briefly in Russian.",
+            prompt="Ответь одним словом: готово.",
+        )
+    )
+
+    assert response.text.strip()

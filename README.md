@@ -85,6 +85,15 @@ Answer source IDs are checked against retrieved results and page citations are
 rendered from their metadata; this membership check does not prove that a
 source factually supports the associated claim.
 
+LLM question processing is synchronous: the `/ask` response waits for retrieval,
+provider completion, and answer validation. The application does not persist
+questions, prompts, retrieved text, answers, or raw provider responses. The
+selected provider still receives request content and applies its own retention
+and data-handling terms. The prompt and output contract are versioned in
+`app/answer.py` (`answer-v2` and `answer-schema-v1`). Provider-side JSON modes
+are disabled by default and should be enabled only for a model that supports
+them; local schema and citation validation remains mandatory either way.
+
 ## Configuration
 
 All operational settings are environment-backed; see `.env.example` for the full list with defaults.
@@ -164,5 +173,16 @@ Lint and format:
 
 - SQLite and Qdrant are not updated atomically. Ingestion writes the new chunks and vectors first and only removes the previous chunk rows once indexing succeeds; on failure it rolls the session back and restores the previous vectors.
 - `main.py preflight` validates the schema, Qdrant, the selected LLM provider configuration, and Tesseract language data. For Ollama it checks the configured model; for OpenRouter it checks that the API key is configured without sending a live or potentially billable request.
+- OpenRouter requests may incur provider charges. The application never switches providers or models automatically; preflight checks only that a key is configured, not whether it is valid or funded.
 - LLM calls retry only safe connection-establishment failures and HTTP 429 responses, within the attempt and total-time limits. `Retry-After` is honored when valid. Read/write timeouts, connection loss after transmission, other HTTP statuses, and answer-validation failures are not retried; an unknown outcome may mean the provider processed the request.
 - `/ask` maps typed provider errors to safe Russian guidance and logs provider, model, error category, attempts, elapsed time, and the provider request ID when available. It never logs the API key, question, retrieved text, prompt, or model response.
+
+The real OpenRouter smoke test is intentionally opt-in and may incur charges.
+Run it only when an OpenRouter key is configured and you explicitly want a
+live provider request:
+
+```powershell
+$env:RUN_OPENROUTER_TESTS = "1"
+.\venv\Scripts\python.exe -m pytest tests\test_rag_integration.py -m integration -k openrouter
+Remove-Item Env:RUN_OPENROUTER_TESTS
+```

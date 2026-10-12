@@ -202,12 +202,12 @@ mode, context size, streaming, or token/cost metadata.
 ## Progress
 
 - Total tasks: 8
-- Completed: 5 (decisions recorded and tasks 2-5 implemented)
-- Current task: task 6
+- Completed: 7 (task 7 was explicitly declined)
+- Current task: none
 - Blocked: none
-- Remaining: 2 (task 7 explicitly declined)
-- Latest test result: 180 passed, 3 deselected; Ruff and Black passed
-- Latest commit: `1e39bcb`
+- Remaining: 0
+- Latest test result: 198 passed, 4 deselected; Ruff, Black, and `pip check` passed
+- Latest commit: `5446093`
 
 ## Tasks
 
@@ -403,7 +403,8 @@ mode, context size, streaming, or token/cost metadata.
 * Definition of done: Attempts are bounded and observable; no nested retries
   exist; uncertain billable outcomes are not retried automatically.
 * Commit message: `feat(llm): add bounded retry and error policy`
-* Commit hash: pending verification after commit
+* Commit hash: `4f9e642`
+* Retry-budget hardening follow-up: `5446093`
 
 ### Task 7: Persisting approved LLM run results
 
@@ -446,7 +447,7 @@ mode, context size, streaming, or token/cost metadata.
 
 ### Task 8: Integrating the pipeline, documenting operation, and final review
 
-* Status: `[ ]`
+* Status: `[x]`
 * Goal: Wire approved components into the existing UI, prove regressions are
   absent, and document operational behavior.
 * Review/requirement: Requirements 11-16 of `prompt.txt`.
@@ -456,12 +457,12 @@ mode, context size, streaming, or token/cost metadata.
   `README.md`, `AGENTS.md`, `.env.example`, `tests/test_web.py`,
   `tests/test_rag_integration.py`.
 * Expected changes: Wire the selected service without changing the current
-  form path or CLI; render actionable safe statuses/errors and optional usage
-  metadata approved for display. Document provider configuration, cost risk,
-  retries, data retention, prompt/schema versioning, capability limits,
-  synchronous behavior, and local-only security. Add an opt-in OpenRouter
-  smoke test gated by an explicit setting and valid credentials. Do not add a
-  job system unless task 1 explicitly approves it.
+  form path or CLI; render actionable safe errors. Keep usage/cost metadata
+  internal rather than expanding the UI. Document provider configuration,
+  cost risk, retries, data retention, prompt/schema versioning, capability
+  limits, synchronous behavior, and local-only security. Add an opt-in
+  OpenRouter smoke test gated by an explicit setting and valid credentials.
+  Do not add a job system unless task 1 explicitly approves it.
 * Public contracts affected: Existing `POST /ask` server-rendered form only
   unless a separate API contract is approved. No response-format break.
 * Failure scenarios: No matching retrieval, each provider error class,
@@ -480,7 +481,7 @@ mode, context size, streaming, or token/cost metadata.
   suite and quality checks pass; live-provider tests remain opt-in; final diff
   contains no secrets or unrelated user changes.
 * Commit message: `feat(llm): integrate validated provider pipeline`
-* Commit hash: pending
+* Commit hash: pending verification after commit
 
 ## Important decisions and unresolved questions
 

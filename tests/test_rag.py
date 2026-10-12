@@ -1,9 +1,18 @@
 import json
 
+import httpx
+
 from app.answer import ANSWER_PROMPT_VERSION, ANSWER_SCHEMA_VERSION, AnswerGenerator
 from app.context import ContextBuilder
 from app.embeddings import EmbeddingService
-from app.llm import LLMCapabilities, LLMRequest, LLMResponse, LLMService
+from app.llm import (
+    LLMCapabilities,
+    LLMRequest,
+    LLMResponse,
+    LLMRetryPolicy,
+    LLMService,
+    OpenRouterLLMService,
+)
 from app.rag import RAGPipeline
 from app.retrieval import Retriever
 
@@ -121,3 +130,56 @@ def test_rag_pipeline_forwards_selected_document_ids():
     )
 
     assert vector_store.searched_document_ids == ["doc-1", "doc-2"]
+
+
+def test_rag_pipeline_uses_openrouter_adapter_with_mocked_http(monkeypatch):
+    calls = []
+    response_text = json.dumps(
+        {
+            "schema_version": ANSWER_SCHEMA_VERSION,
+            "insufficient_information": False,
+            "segments": [
+                {
+                    "text": "Договор действует один год.",
+                    "source_ids": ["S1"],
+                }
+            ],
+        }
+    )
+
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs))
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": response_text}}],
+                "id": "request-1",
+            },
+            headers={"x-request-id": "request-header-1"},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr("app.llm.httpx.post", fake_post)
+    llm = OpenRouterLLMService(
+        model="test-model",
+        base_url="https://openrouter.test",
+        api_key="test-key",
+        retry_policy=LLMRetryPolicy(max_attempts=1),
+    )
+    pipeline = RAGPipeline(
+        retriever=Retriever(FakeEmbeddingService(), FakeVectorStore()),
+        context_builder=ContextBuilder(),
+        answer_generator=AnswerGenerator(llm),
+    )
+
+    answer = pipeline.answer(question="Каков срок действия договора?")
+
+    assert answer == "Договор действует один год. [стр. 3]"
+    assert len(calls) == 1
+    url, kwargs = calls[0]
+    assert url == "https://openrouter.test/api/v1/chat/completions"
+    messages = kwargs["json"]["messages"]
+    assert [message["role"] for message in messages] == ["system", "user"]
+    assert "Каков срок действия договора?" in messages[-1]["content"]
+    assert "The contract is valid for one year." in messages[-1]["content"]
+    assert "ID источника: S1" in messages[-1]["content"]
