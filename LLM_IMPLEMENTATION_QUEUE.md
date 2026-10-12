@@ -207,7 +207,7 @@ mode, context size, streaming, or token/cost metadata.
 - Blocked: none
 - Remaining: 0
 - Latest test result: 198 passed, 4 deselected; Ruff, Black, and `pip check` passed
-- Latest commit: `5446093`
+- Latest commit: `e919c79`
 
 ## Tasks
 
@@ -481,7 +481,7 @@ mode, context size, streaming, or token/cost metadata.
   suite and quality checks pass; live-provider tests remain opt-in; final diff
   contains no secrets or unrelated user changes.
 * Commit message: `feat(llm): integrate validated provider pipeline`
-* Commit hash: pending verification after commit
+* Commit hash: `e919c79`
 
 ## Important decisions and unresolved questions
 
