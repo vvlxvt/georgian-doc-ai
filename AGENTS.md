@@ -257,9 +257,9 @@ Schema evolution goes through Alembic, never `Base.metadata.create_all()`.
 
 ### Current suite status (verified 2026-10-12)
 
-`163 passed, 3 deselected` with `pytest -m "not integration"`, and
+`180 passed, 3 deselected` with `pytest -m "not integration"`, and
 `ruff check .` / `black --check .` are clean after the LLM contract and
-source-aware context changes.
+structured citation-validation changes.
 
 How the suite stays hermetic:
 

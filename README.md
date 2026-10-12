@@ -81,6 +81,9 @@ Uploaded files are streamed to a temporary file, removed after processing, and
 never use the submitted filename as a directory path. Question history and
 document deletion are not provided. The answer page displays the answer string
 from RAG and does not independently reconstruct source references.
+Answer source IDs are checked against retrieved results and page citations are
+rendered from their metadata; this membership check does not prove that a
+source factually supports the associated claim.
 
 ## Configuration
 

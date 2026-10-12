@@ -20,6 +20,7 @@ class LLMErrorCategory(StrEnum):
     UNSUPPORTED_CAPABILITY = "unsupported_capability"
     CONTEXT_LENGTH = "context_length"
     INVALID_RESPONSE = "invalid_response"
+    REFUSAL = "refusal"
     UPSTREAM = "upstream"
     OUTCOME_UNKNOWN = "outcome_unknown"
     VALIDATION = "validation"
@@ -49,6 +50,7 @@ class LLMRequest:
     prompt: str
     system_prompt: str | None = None
     prompt_version: str | None = None
+    response_schema: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +77,7 @@ class LLMResponse:
     usage: LLMUsage | None = None
     cost: Decimal | None = None
     provider_request_id: str | None = None
+    refused: bool = False
 
 
 class LLMService(ABC):
@@ -303,6 +306,11 @@ class OllamaLLMService(LLMService):
             "prompt": prompt,
             "stream": False,
         }
+        if request.response_schema is not None:
+            if self.capabilities.supports_structured_output:
+                payload["format"] = request.response_schema
+            elif self.capabilities.supports_json_mode:
+                payload["format"] = "json"
         response = _post_with_error_mapping(
             self._post,
             payload,
@@ -380,6 +388,19 @@ class OpenRouterLLMService(LLMService):
             "messages": messages,
             "stream": False,
         }
+        if request.response_schema is not None:
+            if self.capabilities.supports_structured_output:
+                payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "answer",
+                        "strict": True,
+                        "schema": request.response_schema,
+                    },
+                }
+                payload["provider"] = {"require_parameters": True}
+            elif self.capabilities.supports_json_mode:
+                payload["response_format"] = {"type": "json_object"}
         response = _post_with_error_mapping(
             self._post,
             payload,
@@ -389,10 +410,21 @@ class OpenRouterLLMService(LLMService):
         data = _response_data(response, provider=self.provider, model=self.model)
         choices = data.get("choices")
         content: Any = None
+        refused = False
         if isinstance(choices, list) and choices and isinstance(choices[0], dict):
             message = choices[0].get("message")
             if isinstance(message, dict):
                 content = message.get("content")
+                refused = bool(message.get("refusal"))
+        if refused:
+            return LLMResponse(
+                text="",
+                provider=self.provider,
+                model=self.model,
+                provider_request_id=_request_id(data, response),
+                usage=_usage_from_payload(data.get("usage")),
+                refused=True,
+            )
         if isinstance(content, dict):
             content = content.get("text")
         if not isinstance(content, str) or not content.strip():
@@ -403,13 +435,7 @@ class OpenRouterLLMService(LLMService):
                 model=self.model,
             )
 
-        request_id = (
-            data.get("id")
-            or data.get("request_id")
-            or getattr(response, "headers", {}).get("x-request-id")
-        )
-        if not isinstance(request_id, str):
-            request_id = None
+        request_id = _request_id(data, response)
         usage = data.get("usage")
         cost = usage.get("cost") if isinstance(usage, dict) else None
 
@@ -421,3 +447,14 @@ class OpenRouterLLMService(LLMService):
             cost=_cost_from_payload(cost),
             provider_request_id=request_id,
         )
+
+
+def _request_id(data: dict[str, Any], response: httpx.Response) -> str | None:
+    for value in (
+        data.get("id"),
+        data.get("request_id"),
+        getattr(response, "headers", {}).get("x-request-id"),
+    ):
+        if isinstance(value, str) and value:
+            return value
+    return None

@@ -208,6 +208,91 @@ def test_openrouter_llm_service_serializes_request_and_timeout(monkeypatch):
     assert response.provider_request_id == "request-header-id"
 
 
+def test_openrouter_only_requests_json_schema_when_capability_is_configured(
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_post(url, **kwargs):
+        captured.update(kwargs["json"])
+        return FakeResponse({"choices": [{"message": {"content": '{"answer": "ok"}'}}]})
+
+    monkeypatch.setattr("app.llm.httpx.post", fake_post)
+    llm = OpenRouterLLMService(
+        model="test-model",
+        api_key="test-key",
+        capabilities=LLMCapabilities(supports_structured_output=True),
+    )
+    schema = {"type": "object", "properties": {"answer": {"type": "string"}}}
+
+    llm.call(LLMRequest(prompt="Question", response_schema=schema))
+
+    assert captured["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "answer",
+            "strict": True,
+            "schema": schema,
+        },
+    }
+    assert captured["provider"] == {"require_parameters": True}
+
+
+def test_openrouter_uses_json_mode_only_when_capability_is_configured(monkeypatch):
+    captured = {}
+
+    def fake_post(url, **kwargs):
+        captured.update(kwargs["json"])
+        return FakeResponse({"choices": [{"message": {"content": '{"answer": "ok"}'}}]})
+
+    monkeypatch.setattr("app.llm.httpx.post", fake_post)
+    llm = OpenRouterLLMService(
+        model="test-model",
+        api_key="test-key",
+        capabilities=LLMCapabilities(supports_json_mode=True),
+    )
+
+    llm.call(LLMRequest(prompt="Question", response_schema={"type": "object"}))
+
+    assert captured["response_format"] == {"type": "json_object"}
+    assert "provider" not in captured
+
+
+def test_openrouter_does_not_request_unconfigured_structured_output(monkeypatch):
+    captured = {}
+
+    def fake_post(url, **kwargs):
+        captured.update(kwargs["json"])
+        return FakeResponse({"choices": [{"message": {"content": '{"answer": "ok"}'}}]})
+
+    monkeypatch.setattr("app.llm.httpx.post", fake_post)
+    llm = OpenRouterLLMService(model="test-model", api_key="test-key")
+
+    llm.call(LLMRequest(prompt="Question", response_schema={"type": "object"}))
+
+    assert "response_format" not in captured
+
+
+def test_openrouter_maps_provider_refusal_to_neutral_response(monkeypatch):
+    llm = OpenRouterLLMService(
+        model="test-model",
+        base_url="http://testserver",
+        api_key="test-key",
+    )
+    monkeypatch.setattr(
+        llm,
+        "_post",
+        lambda payload: FakeResponse(
+            {"choices": [{"message": {"content": None, "refusal": "Not allowed"}}]}
+        ),
+    )
+
+    response = llm.call(LLMRequest(prompt="Question"))
+
+    assert response.refused
+    assert response.text == ""
+
+
 @pytest.mark.parametrize(
     ("exception", "category"),
     [

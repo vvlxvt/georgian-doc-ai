@@ -200,12 +200,12 @@ mode, context size, streaming, or token/cost metadata.
 ## Progress
 
 - Total tasks: 8
-- Completed: 4 (decisions recorded and tasks 2-4 implemented)
-- Current task: task 5
+- Completed: 5 (decisions recorded and tasks 2-5 implemented)
+- Current task: task 6
 - Blocked: none
-- Remaining: 3 (task 7 explicitly declined)
-- Latest test result: 163 passed, 3 deselected; Ruff and Black passed
-- Latest commit: `5468fdb`
+- Remaining: 2 (task 7 explicitly declined)
+- Latest test result: 180 passed, 3 deselected; Ruff and Black passed
+- Latest commit: `832d6f4`
 
 ## Tasks
 
@@ -333,11 +333,11 @@ mode, context size, streaming, or token/cost metadata.
   provenance; prompt version is available to diagnostics; retrieved text
   remains untrusted and outside privileged instructions.
 * Commit message: `feat(rag): add versioned source-aware prompts`
-* Commit hash: recorded after commit
+* Commit hash: `832d6f4`
 
 ### Task 5: Parsing structured answers and validating citations
 
-* Status: `[ ]`
+* Status: `[x]`
 * Goal: Reject malformed or unsupported model output before presenting it as a
   grounded answer.
 * Review/requirement: Requirements 8 and 9 of `prompt.txt`.
@@ -367,7 +367,7 @@ mode, context size, streaming, or token/cost metadata.
   result. Documentation states that citation membership is not proof of
   semantic entailment.
 * Commit message: `feat(rag): validate structured answers and citations`
-* Commit hash: pending
+* Commit hash: recorded after commit
 
 ### Task 6: Implementing bounded retries and actionable failure mapping
 

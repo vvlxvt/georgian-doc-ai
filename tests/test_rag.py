@@ -1,4 +1,6 @@
-from app.answer import AnswerGenerator
+import json
+
+from app.answer import ANSWER_PROMPT_VERSION, ANSWER_SCHEMA_VERSION, AnswerGenerator
 from app.context import ContextBuilder
 from app.embeddings import EmbeddingService
 from app.llm import LLMCapabilities, LLMRequest, LLMResponse, LLMService
@@ -56,7 +58,18 @@ class FakeLLMService(LLMService):
     def call(self, request: LLMRequest) -> LLMResponse:
         self.requests.append(request)
         return LLMResponse(
-            text="Договор действует один год. [стр. 3]",
+            text=json.dumps(
+                {
+                    "schema_version": ANSWER_SCHEMA_VERSION,
+                    "insufficient_information": False,
+                    "segments": [
+                        {
+                            "text": "Договор действует один год.",
+                            "source_ids": ["S1"],
+                        }
+                    ],
+                }
+            ),
             provider=self.provider,
             model=self.model,
         )
@@ -91,7 +104,7 @@ def test_rag_pipeline():
     assert "The contract is valid for one year." in request.prompt
     assert "[стр. 3]" in request.prompt
     assert "ID источника: S1" in request.prompt
-    assert request.prompt_version == "answer-v1"
+    assert request.prompt_version == ANSWER_PROMPT_VERSION
 
 
 def test_rag_pipeline_forwards_selected_document_ids():
