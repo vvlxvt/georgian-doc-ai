@@ -207,7 +207,7 @@ mode, context size, streaming, or token/cost metadata.
 - Blocked: none
 - Remaining: 0
 - Latest test result: 198 passed, 4 deselected; Ruff, Black, and `pip check` passed
-- Latest commit: `e919c79`
+- Latest task implementation commit: `e919c79`
 
 ## Tasks
 
