@@ -1,7 +1,7 @@
 from app.answer import AnswerGenerator
 from app.context import ContextBuilder
 from app.embeddings import EmbeddingService
-from app.llm import LLMService
+from app.llm import LLMCapabilities, LLMRequest, LLMResponse, LLMService
 from app.rag import RAGPipeline
 from app.retrieval import Retriever
 
@@ -49,10 +49,17 @@ class FakeVectorStore:
 class FakeLLMService(LLMService):
     def __init__(self):
         self.prompts = []
+        self.provider = "fake"
+        self.model = "test-model"
+        self.capabilities = LLMCapabilities()
 
-    def generate(self, prompt: str) -> str:
-        self.prompts.append(prompt)
-        return "Договор действует один год. [стр. 3]"
+    def call(self, request: LLMRequest) -> LLMResponse:
+        self.prompts.append(request.prompt)
+        return LLMResponse(
+            text="Договор действует один год. [стр. 3]",
+            provider=self.provider,
+            model=self.model,
+        )
 
 
 def test_rag_pipeline():

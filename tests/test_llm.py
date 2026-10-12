@@ -1,7 +1,15 @@
 import httpx
 import pytest
 
-from app.llm import LLMService, OllamaLLMService
+from app.llm import (
+    LLMCapabilities,
+    LLMError,
+    LLMErrorCategory,
+    LLMRequest,
+    LLMResponse,
+    LLMService,
+    OllamaLLMService,
+)
 
 
 class FakeResponse:
@@ -49,6 +57,92 @@ def test_ollama_llm_service_returns_response_text(monkeypatch):
     assert answer == "Векторная база хранит эмбеддинги."
 
 
+def test_ollama_llm_service_returns_provider_neutral_response(monkeypatch):
+    llm = OllamaLLMService(model="test-model", base_url="http://testserver")
+    monkeypatch.setattr(
+        llm,
+        "_post",
+        lambda payload: FakeResponse({"response": "Готово."}),
+    )
+
+    response = llm.call(LLMRequest(prompt="Вопрос"))
+
+    assert response == LLMResponse(
+        text="Готово.",
+        provider="ollama",
+        model="test-model",
+    )
+    assert llm.capabilities == LLMCapabilities()
+
+
+def test_ollama_llm_service_maps_available_usage_metadata(monkeypatch):
+    llm = OllamaLLMService(model="test-model", base_url="http://testserver")
+    monkeypatch.setattr(
+        llm,
+        "_post",
+        lambda payload: FakeResponse(
+            {
+                "response": "Готово.",
+                "prompt_eval_count": 7,
+                "eval_count": 3,
+            }
+        ),
+    )
+
+    response = llm.call(LLMRequest(prompt="Вопрос"))
+
+    assert response.usage is not None
+    assert response.usage.input_tokens == 7
+    assert response.usage.output_tokens == 3
+    assert response.usage.total_tokens == 10
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [{}, {"response": None}, {"response": ""}, []],
+)
+def test_ollama_llm_service_rejects_missing_or_malformed_text(monkeypatch, payload):
+    llm = OllamaLLMService(model="test-model", base_url="http://testserver")
+    monkeypatch.setattr(llm, "_post", lambda request: FakeResponse(payload))
+
+    with pytest.raises(LLMError) as exc_info:
+        llm.call(LLMRequest(prompt="Вопрос"))
+
+    assert exc_info.value.category is LLMErrorCategory.INVALID_RESPONSE
+
+
+def test_ollama_llm_service_maps_connection_failure(monkeypatch):
+    llm = OllamaLLMService(model="test-model", base_url="http://testserver")
+
+    def fail(payload):
+        raise httpx.ConnectError("sensitive request details")
+
+    monkeypatch.setattr(llm, "_post", fail)
+
+    with pytest.raises(LLMError) as exc_info:
+        llm.call(LLMRequest(prompt="Вопрос"))
+
+    assert exc_info.value.category is LLMErrorCategory.CONNECTION
+    assert "sensitive request details" not in str(exc_info.value)
+
+
+def test_ollama_llm_service_maps_invalid_json(monkeypatch):
+    llm = OllamaLLMService(model="test-model", base_url="http://testserver")
+    response = FakeResponse({})
+
+    def invalid_json():
+        raise ValueError("raw response")
+
+    response.json = invalid_json
+    monkeypatch.setattr(llm, "_post", lambda payload: response)
+
+    with pytest.raises(LLMError) as exc_info:
+        llm.call(LLMRequest(prompt="Вопрос"))
+
+    assert exc_info.value.category is LLMErrorCategory.INVALID_RESPONSE
+    assert "raw response" not in str(exc_info.value)
+
+
 def test_ollama_llm_service_propagates_http_error(monkeypatch):
     llm = OllamaLLMService(model="test-model", base_url="http://testserver")
 
@@ -57,8 +151,9 @@ def test_ollama_llm_service_propagates_http_error(monkeypatch):
 
     monkeypatch.setattr(llm, "_post", fail)
 
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(LLMError) as exc_info:
         llm.generate("Любой вопрос")
+    assert exc_info.value.category is LLMErrorCategory.UPSTREAM
 
 
 def test_ollama_llm_service_is_integration_only():

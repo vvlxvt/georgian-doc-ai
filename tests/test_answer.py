@@ -1,14 +1,21 @@
 from app.answer import AnswerGenerator
-from app.llm import LLMService
+from app.llm import LLMCapabilities, LLMRequest, LLMResponse, LLMService
 
 
 class FakeLLMService(LLMService):
     def __init__(self):
         self.prompts = []
+        self.provider = "fake"
+        self.model = "test-model"
+        self.capabilities = LLMCapabilities()
 
-    def generate(self, prompt: str) -> str:
-        self.prompts.append(prompt)
-        return "Generated answer"
+    def call(self, request: LLMRequest) -> LLMResponse:
+        self.prompts.append(request.prompt)
+        return LLMResponse(
+            text="Generated answer",
+            provider=self.provider,
+            model=self.model,
+        )
 
 
 def test_answer_generator_uses_llm():

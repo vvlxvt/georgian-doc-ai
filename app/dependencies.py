@@ -8,7 +8,7 @@ from app.config import settings
 from app.context import ContextBuilder
 from app.embeddings import HuggingFaceEmbeddingService
 from app.indexing import ChunkIndexer
-from app.llm import OllamaLLMService, OpenRouterLLMService
+from app.llm import LLMService, OllamaLLMService, OpenRouterLLMService
 from app.ocr import TesseractOCREngine
 from app.pipeline import DocumentPipeline
 from app.qdrant_store import QdrantVectorStore
@@ -40,7 +40,7 @@ def get_vector_store() -> QdrantVectorStore:
 
 
 @lru_cache(maxsize=1)
-def get_llm_service() -> OllamaLLMService | OpenRouterLLMService:
+def get_llm_service() -> LLMService:
     """Select LLM implementation based on settings.llm_provider.
 
     Defaults to 'openrouter' when configured so in Settings.

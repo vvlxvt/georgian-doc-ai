@@ -200,14 +200,13 @@ mode, context size, streaming, or token/cost metadata.
 ## Progress
 
 - Total tasks: 8
-- Completed: 1 (task 1 decisions recorded; existing capabilities are marked
+- Completed: 2 (task 1 decisions and task 2 contracts recorded; existing capabilities are marked
   complete in the inspection and are not counted as new work)
-- Current task: task 2
+- Current task: task 3
 - Blocked: none
-- Remaining: 6 (task 7 explicitly declined)
-- Latest test result: 131 passed, 3 deselected; Ruff and Black passed (latest
-  recorded run, not rerun during planning)
-- Latest commit: `9f54922`
+- Remaining: 5 (task 7 explicitly declined)
+- Latest test result: 143 passed, 3 deselected; Ruff and Black passed
+- Latest commit: `a2c4cab`
 
 ## Tasks
 
@@ -234,11 +233,11 @@ mode, context size, streaming, or token/cost metadata.
 * Definition of done: The user-approved provider, data-retention, citation,
   and sync-vs-job decisions are recorded below.
 * Commit message: `docs(llm): record approved implementation decisions`
-* Commit hash: recorded after commit
+* Commit hash: `a2c4cab`
 
 ### Task 2: Defining provider-neutral LLM contracts and error taxonomy
 
-* Status: `[ ]`
+* Status: `[x]`
 * Goal: Give both provider adapters and the RAG layer stable typed contracts.
 * Review/requirement: Requirements 4, 6, and 7 of `prompt.txt`.
 * Dependencies: Task 1.
@@ -264,7 +263,7 @@ mode, context size, streaming, or token/cost metadata.
   contract, errors have stable categories, and current Ollama-backed behavior
   remains covered.
 * Commit message: `feat(llm): define provider-neutral contracts`
-* Commit hash: pending
+* Commit hash: recorded after commit
 
 ### Task 3: Adding explicit LLM configuration and OpenRouter adapter
 

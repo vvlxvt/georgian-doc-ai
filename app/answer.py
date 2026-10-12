@@ -1,4 +1,4 @@
-from app.llm import LLMService
+from app.llm import LLMRequest, LLMService
 
 
 class AnswerGenerator:
@@ -23,7 +23,7 @@ class AnswerGenerator:
             context=context,
         )
 
-        return self.llm.generate(prompt)
+        return self.llm.call(LLMRequest(prompt=prompt)).text
 
     @staticmethod
     def _build_prompt(
