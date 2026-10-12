@@ -180,9 +180,11 @@ explicit justification in `REVIEW_QUEUE.md`.
    the model may use only the supplied context. Retrieved text sits between
    `НАЧАЛО_ИСТОЧНИКА` / `КОНЕЦ_ИСТОЧНИКА` markers and is untrusted data:
    instructions inside a document must never be executed. Empty context returns
-   the fixed Russian "insufficient information" sentence without calling the LLM.
-   Existing citations are prompt-directed and are not yet schema- or
-   source-validated; do not claim stronger grounding guarantees.
+   the fixed Russian "insufficient information" sentence without calling the
+   LLM. Answers use ordinary text, not a fixed JSON schema. The application
+   rejects missing page citations and citation page numbers absent from the
+   retrieved results, but this membership check does not establish factual
+   support for a claim.
 8. **Preflight before ingestion.** `main.py preflight` must pass: Qdrant
    reachable, selected LLM provider configured (Ollama model installed or
    OpenRouter API key present), and `kat` and `eng` Tesseract data present.

@@ -1,8 +1,6 @@
-import json
-
 import httpx
 
-from app.answer import ANSWER_PROMPT_VERSION, ANSWER_SCHEMA_VERSION, AnswerGenerator
+from app.answer import ANSWER_PROMPT_VERSION, AnswerGenerator
 from app.context import ContextBuilder
 from app.embeddings import EmbeddingService
 from app.llm import (
@@ -67,18 +65,7 @@ class FakeLLMService(LLMService):
     def call(self, request: LLMRequest) -> LLMResponse:
         self.requests.append(request)
         return LLMResponse(
-            text=json.dumps(
-                {
-                    "schema_version": ANSWER_SCHEMA_VERSION,
-                    "insufficient_information": False,
-                    "segments": [
-                        {
-                            "text": "Договор действует один год.",
-                            "source_ids": ["S1"],
-                        }
-                    ],
-                }
-            ),
+            text="Договор действует один год. [стр. 3]",
             provider=self.provider,
             model=self.model,
         )
@@ -114,6 +101,7 @@ def test_rag_pipeline():
     assert "[стр. 3]" in request.prompt
     assert "ID источника: S1" in request.prompt
     assert request.prompt_version == ANSWER_PROMPT_VERSION
+    assert request.response_schema is None
 
 
 def test_rag_pipeline_forwards_selected_document_ids():
@@ -134,18 +122,7 @@ def test_rag_pipeline_forwards_selected_document_ids():
 
 def test_rag_pipeline_uses_openrouter_adapter_with_mocked_http(monkeypatch):
     calls = []
-    response_text = json.dumps(
-        {
-            "schema_version": ANSWER_SCHEMA_VERSION,
-            "insufficient_information": False,
-            "segments": [
-                {
-                    "text": "Договор действует один год.",
-                    "source_ids": ["S1"],
-                }
-            ],
-        }
-    )
+    response_text = "Договор действует один год. [стр. 3]"
 
     def fake_post(url, **kwargs):
         calls.append((url, kwargs))
@@ -183,3 +160,5 @@ def test_rag_pipeline_uses_openrouter_adapter_with_mocked_http(monkeypatch):
     assert "Каков срок действия договора?" in messages[-1]["content"]
     assert "The contract is valid for one year." in messages[-1]["content"]
     assert "ID источника: S1" in messages[-1]["content"]
+    assert "обычный текст" in messages[0]["content"]
+    assert "response_format" not in kwargs["json"]

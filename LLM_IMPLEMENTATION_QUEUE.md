@@ -13,13 +13,13 @@
   time are included in response/error metadata.
 - `AnswerGenerator` owns a Russian-language prompt, page-citation instructions,
   and untrusted-source markers. It returns a fixed insufficient-information
-  sentence without calling the LLM when the context is empty. It validates a
-  structured response and cited request-local source IDs before rendering
-  page-number citations.
+  sentence without calling the LLM when the context is empty. It requests
+  ordinary text, rejects empty or uncited answers, and validates cited page
+  numbers against the retrieved results.
 - Qdrant results contain chunk IDs and payload metadata including
   `document_id`, `page_id`, `page_number`, `chunk_index`, and text. The context
-  currently renders page numbers and text but not stable application-issued
-  source identifiers.
+  includes stable application-issued source identifiers plus page numbers and
+  text; the answer contract uses page-number citations, not source-ID JSON.
 - The local FastAPI/Jinja UI has a synchronous `/ask` form, selected-document
   filtering, pending UI feedback, category-specific safe error guidance, and
   structured LLM failure logs that omit prompts, source text, credentials, and
@@ -56,8 +56,8 @@ Do not schedule duplicate work for:
 - OpenRouter adapter and explicit provider selection/configuration.
 - Provider-neutral request/response/usage/error contract with provider
   request IDs and optional token/cost metadata.
-- Prompt version metadata, structured output parsing, and validation of
-  citations against the exact retrieved chunks are implemented.
+- Prompt version metadata and plain-text answer validation are implemented.
+  Citation membership is checked at the page level; semantic support is not.
 - Bounded retry behavior and actionable web error states are implemented;
 - Durable LLM run/result records, retention policy, and persistence failure
   handling remain unimplemented because persistence was explicitly declined.
@@ -127,14 +127,12 @@ Do not schedule duplicate work for:
    is the approved default. Ollama is available by explicit selection.
    Do not add automatic provider/model fallback.
 4. Keep prompt rendering and response validation in application code, not in
-   the provider adapter. Version the prompt/schema in source or another
+   the provider adapter. Version the prompt in source or another
    lightweight repository-local mechanism; do not add a prompt-management
    service or database until a demonstrated need exists.
-5. Add source IDs derived from retrieved chunk IDs to the model context.
-   Require structured output where explicitly supported; otherwise parse the
-   same application schema from ordinary text. Validate every cited source ID
-   against the retrieval result set and render page citations from trusted
-   application metadata, never model-invented document IDs or URLs.
+5. Include retrieved page metadata in the model context. Request ordinary
+   Russian text with `[стр. N]` citations; validate cited page numbers against
+   the retrieval result set. Do not trust model-invented document IDs or URLs.
 6. Keep request processing synchronous initially. Persisted run records and
    user-visible history/status depend on the product decisions in task 1.
    Reconsider durable jobs only after measuring real response latency and
@@ -149,9 +147,9 @@ Question and selected document IDs
 -> versioned prompt and bounded context
 -> configured `LLMService`
 -> typed provider response and usage metadata
--> parse/schema validation
--> citation-ID and evidence-reference validation
--> application-rendered answer with trusted `[стр. N]` citations
+-> plain-text, non-empty response validation
+-> page-citation membership and per-sentence citation checks
+-> answer with validated `[стр. N]` page references
 -> optional durable run/result persistence
 -> existing server-rendered answer response.
 
@@ -162,9 +160,9 @@ Question and selected document IDs
 - Provider errors map to stable internal categories: configuration/auth,
   quota/credits, rate limit, connection/timeout, transient server/overload,
   invalid request/context limit, and malformed/truncated response.
-- Parser/schema/citation failures are validation errors, not transport errors.
-  Do not retry them automatically by default; a future explicitly bounded
-  repair request would be a separately costed provider call.
+- Response/citation validation failures are validation errors, not transport
+  errors. Do not retry them automatically by default; a future explicitly
+  bounded repair request would be a separately costed provider call.
 - Persistence failures are reported distinctly and must never trigger another
   LLM request automatically.
 - Use at most one retry-policy layer. Retry only explicitly classified,
@@ -201,12 +199,12 @@ mode, context size, streaming, or token/cost metadata.
 
 ## Progress
 
-- Total tasks: 8
-- Completed: 7 (task 7 was explicitly declined)
+- Total tasks: 9
+- Completed: 8 (task 7 was explicitly declined)
 - Current task: none
 - Blocked: none
 - Remaining: 0
-- Latest test result: 198 passed, 4 deselected; Ruff, Black, and `pip check` passed
+- Latest test result: 191 passed, 4 deselected; Ruff and Black passed
 - Latest task implementation commit: `e919c79`
 
 ## Tasks
@@ -337,7 +335,7 @@ mode, context size, streaming, or token/cost metadata.
 * Commit message: `feat(rag): add versioned source-aware prompts`
 * Commit hash: `832d6f4`
 
-### Task 5: Parsing structured answers and validating citations
+### Task 5: Initial JSON-answer validation design (superseded)
 
 * Status: `[x]`
 * Goal: Reject malformed or unsupported model output before presenting it as a
@@ -370,6 +368,9 @@ mode, context size, streaming, or token/cost metadata.
   semantic entailment.
 * Commit message: `feat(rag): validate structured answers and citations`
 * Commit hash: `1e39bcb`
+* Superseded: The strict JSON contract was later replaced by Task 9 after an
+  `openrouter/auto` answer failed local response validation. The exact raw
+  provider response was not retained, so its precise format is unknown.
 
 ### Task 6: Implementing bounded retries and actionable failure mapping
 
@@ -483,6 +484,22 @@ mode, context size, streaming, or token/cost metadata.
 * Commit message: `feat(llm): integrate validated provider pipeline`
 * Commit hash: `e919c79`
 
+### Task 9: Using plain-text answers with page-citation checks
+
+* Status: `[x]`
+* Goal: Accept ordinary Russian model text instead of requiring a fixed JSON
+  schema that may not match the model selected by OpenRouter auto-routing.
+* Changes: Request ordinary text, keep the empty-context short circuit, reject
+  empty answers and answers without page citations, ensure every detected
+  sentence has a citation, and reject citations to pages absent from retrieved
+  results. This validates citation membership only, not factual support.
+* Files: `app/answer.py`, answer and RAG tests, `README.md`, `AGENTS.md`, and
+  this queue.
+* Verification: Focused tests, the offline test suite, Ruff, and Black.
+  `main.py preflight` passed. One live `/ask` request for
+  `georgian_scan.pdf` completed with the fixed insufficient-information answer;
+  the configured database has 4 pages and 37 chunks, and Qdrant has 37 vectors.
+
 ## Important decisions and unresolved questions
 
 Approved decisions:
@@ -492,9 +509,9 @@ Approved decisions:
 2. Keep `/ask` synchronous. Do not add background jobs or a job-status API.
 3. Do not persist questions, answers, prompts, retrieved document text,
    provider bodies, credentials, or LLM-run records. Do not add result history.
-4. Keep the existing Russian answer string and `[стр. N]` citations. Use
-   request-local source IDs internally and validate them before rendering
-   page-number citations.
+4. Keep Russian answers and `[стр. N]` citations in ordinary text. Validate
+   cited page numbers against the retrieved results; do not require a JSON
+   schema or assert that citation membership proves semantic support.
 5. Treat provider request IDs, token use, and cost as optional metadata;
    missing usage is not a successful-shaped fabricated value.
 6. Citation membership does not prove factual entailment.
@@ -537,7 +554,8 @@ No product decisions remain open for the implementation queue.
 - Mock the OpenRouter HTTP boundary; test exact request construction, response
   parsing, usage/request-ID extraction, and status/error classification.
 - Test prompt versioning, context/provenance generation, empty evidence,
-  output parsing, citation validation, and limits of grounding checks.
+  plain-text response validation, page-citation membership, and limits of
+  grounding checks.
 - Inject clocks, sleep, and randomness for retry-policy tests; verify retry
   count, total elapsed budget, `Retry-After`, no retry for auth/quota/invalid
   output, and no retry for ambiguous post-send outcomes.

@@ -81,18 +81,21 @@ Uploaded files are streamed to a temporary file, removed after processing, and
 never use the submitted filename as a directory path. Question history and
 document deletion are not provided. The answer page displays the answer string
 from RAG and does not independently reconstruct source references.
-Answer source IDs are checked against retrieved results and page citations are
-rendered from their metadata; this membership check does not prove that a
-source factually supports the associated claim.
+Answers use ordinary Russian text with `[стр. N]` page citations. The
+application checks that cited page numbers occur in the retrieved results and
+that each detected sentence has a citation. This membership check does not
+prove that a source factually supports the associated claim.
 
 LLM question processing is synchronous: the `/ask` response waits for retrieval,
 provider completion, and answer validation. The application does not persist
 questions, prompts, retrieved text, answers, or raw provider responses. The
 selected provider still receives request content and applies its own retention
-and data-handling terms. The prompt and output contract are versioned in
-`app/answer.py` (`answer-v2` and `answer-schema-v1`). Provider-side JSON modes
-are disabled by default and should be enabled only for a model that supports
-them; local schema and citation validation remains mandatory either way.
+and data-handling terms. The prompt is versioned in `app/answer.py`
+(`answer-v3`). The model is asked for ordinary text rather than a fixed JSON
+schema because OpenRouter's automatic model selection may return varying
+formats. Empty output, missing page citations, and citations to pages absent
+from the retrieved results are rejected. This does not validate factual
+support or guarantee that every citation actually substantiates its sentence.
 
 ## Configuration
 
@@ -123,6 +126,10 @@ All operational settings are environment-backed; see `.env.example` for the full
 | `CHUNK_MAX_LENGTH` | `1000` | Characters, not tokens |
 | `CHUNK_OVERLAP` | `100` | Words of overlap between chunks |
 | `MIN_TEXT_LENGTH` | `20` | Below this a page goes to OCR |
+
+`OPENROUTER_SUPPORTS_STRUCTURED_OUTPUT` and `OPENROUTER_SUPPORTS_JSON_MODE`
+describe configured provider capabilities. The current answer pipeline requests
+plain text and does not send a response schema.
 
 Changing `EMBEDDING_MODEL` or `EMBEDDING_SIZE` requires a compatible Qdrant collection and re-indexing all documents. `QdrantVectorStore` refuses to start against a collection whose vector size or distance does not match, so the mismatch surfaces at startup rather than at indexing time.
 
