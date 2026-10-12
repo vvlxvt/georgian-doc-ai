@@ -21,7 +21,9 @@ class FakeVectorStore:
         limit=5,
         score_threshold=None,
         document_id=None,
+        document_ids=None,
     ):
+        self.searched_document_ids = document_ids
         return [
             {
                 "id": "chunk-1",
@@ -72,6 +74,7 @@ def test_rag_pipeline():
     answer = pipeline.answer(question="Каков срок действия договора?")
 
     assert answer == "Договор действует один год. [стр. 3]"
+    assert vector_store.searched_document_ids is None
 
     assert len(llm.prompts) == 1
 
@@ -80,3 +83,19 @@ def test_rag_pipeline():
     assert "Каков срок действия договора?" in prompt
     assert "The contract is valid for one year." in prompt
     assert "[стр. 3]" in prompt
+
+
+def test_rag_pipeline_forwards_selected_document_ids():
+    vector_store = FakeVectorStore()
+    pipeline = RAGPipeline(
+        retriever=Retriever(FakeEmbeddingService(), vector_store),
+        context_builder=ContextBuilder(),
+        answer_generator=AnswerGenerator(FakeLLMService()),
+    )
+
+    pipeline.answer(
+        question="Каков срок действия договора?",
+        document_ids=["doc-1", "doc-2"],
+    )
+
+    assert vector_store.searched_document_ids == ["doc-1", "doc-2"]

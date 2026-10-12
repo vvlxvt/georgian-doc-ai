@@ -13,6 +13,10 @@ Ingestion and query paths are separate:
 
 External services sit behind abstract interfaces (`EmbeddingService`, `VectorStore`, `OCRProcessor`, `LLMService`) and are constructed once per process in `app/dependencies.py`.
 
+The project provides both the command-line tools in `main.py` and a
+server-rendered web UI using FastAPI and Jinja2. The UI reuses the existing
+ingestion and RAG services and preserves the CLI.
+
 ## Local setup
 
 1. Install dependencies:
@@ -45,6 +49,38 @@ External services sit behind abstract interfaces (`EmbeddingService`, `VectorSto
    ```
 
 Re-running `index` on the same file is cheap: pages whose content hash is unchanged are skipped, so OCR is not repeated.
+
+## Web UI
+
+Install the project dependencies, apply migrations, and make sure the required
+Qdrant, Ollama, and Tesseract services are configured. Start the UI bound to
+loopback:
+
+```powershell
+.\venv\Scripts\python.exe -m uvicorn app.web:app --host 127.0.0.1 --port 8000
+```
+
+Open <http://127.0.0.1:8000/> in a browser. Do not change the host to
+`0.0.0.0`: this first version has no user authentication and is intended only
+for local access. State-changing form requests with a mismatched `Origin` are
+rejected.
+
+The UI provides:
+
+- `/` — overview.
+- `/documents` — read-only records stored in SQLite. This page does not verify
+  whether corresponding vectors are present in Qdrant.
+- `/upload` — PDF upload and indexing through the existing document pipeline.
+  Files must have a `.pdf` extension and PDF signature; maximum size is 50 MiB.
+- `/ask` — submit a question to the existing RAG pipeline and display its
+  Russian answer. Select one or more documents to limit the search; with no
+  documents selected, the search includes all documents.
+- `/health` — web-process liveness only; it does not replace `main.py preflight`.
+
+Uploaded files are streamed to a temporary file, removed after processing, and
+never use the submitted filename as a directory path. Question history and
+document deletion are not provided. The answer page displays the answer string
+from RAG and does not independently reconstruct source references.
 
 ## Configuration
 
@@ -89,6 +125,12 @@ The initial revision is idempotent: it inspects existing tables and indexes, so 
 ```
 
 The default suite needs no Qdrant, Ollama, Tesseract, or model download: it uses an in-memory SQLite engine, `QdrantClient(":memory:")`, and fakes. Tests marked `integration` require a running Ollama with the configured model and skip themselves cleanly when it is unavailable.
+
+The web routes are covered by `tests/test_web.py`; run them with:
+
+```powershell
+.\venv\Scripts\python.exe -m pytest tests\test_web.py
+```
 
 The two `test_embeddings.py` tests that load the real `BAAI/bge-m3` model are opt-in via `RUN_REAL_MODEL_TESTS=1`. Loading that model on Windows can abort the interpreter with `Windows fatal exception: access violation` inside `torch`, which is a hard crash rather than a Python exception, so the tests must skip before the model is touched:
 

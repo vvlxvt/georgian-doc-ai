@@ -171,6 +171,29 @@ def test_qdrant_store_upsert_and_search():
     assert result["payload"]["text"] == "თბილისი საქართველოს დედაქალაქია"
 
 
+def test_qdrant_store_searches_across_selected_documents():
+    store = create_store()
+    document_ids = ["doc-1", "doc-2", "doc-3"]
+
+    for document_id in document_ids:
+        store.upsert(
+            vector_id=str(uuid4()),
+            vector=[1.0, 0.0, 0.0],
+            payload={"document_id": document_id, "text": document_id},
+        )
+
+    results = store.search(
+        vector=[1.0, 0.0, 0.0],
+        limit=5,
+        document_ids=["doc-1", "doc-3"],
+    )
+
+    assert {result["payload"]["document_id"] for result in results} == {
+        "doc-1",
+        "doc-3",
+    }
+
+
 def test_qdrant_store_returns_most_similar_vector_first():
     store = create_store()
 

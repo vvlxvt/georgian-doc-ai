@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Документы — Georgian Document RAG{% endblock %}
+{% block meta_description %}Список PDF-документов, зарегистрированных в приложении.{% endblock %}
+
+{% block navigation %}
+  <a class="nav-link" href="{{ url_for('home') }}">Главная</a>
+  <a class="nav-link is-active" href="{{ url_for('documents') }}" aria-current="page">Документы</a>
+  <a class="nav-link" href="{{ url_for('upload_form') }}">Загрузить PDF</a>
+  <a class="nav-link" href="{{ url_for('ask_form') }}">Задать вопрос</a>
+{% endblock %}
+
+{% block content %}
+  <section class="page-heading" aria-labelledby="page-title">
+    <p class="eyebrow">Библиотека</p>
+    <h1 id="page-title">Документы</h1>
+    <p class="page-description">
+      Здесь показаны документы, зарегистрированные в локальной базе приложения.
+      Список сам по себе не проверяет наличие векторов в Qdrant.
+    </p>
+  </section>
+
+  {% if documents %}
+    <p class="results-count" aria-live="polite">Документов: {{ total }}</p>
+    <div class="document-list">
+      {% for entry in documents %}
+        <article class="document-card">
+          <div class="document-card-heading">
+            <h2>{{ entry.document.filename }}</h2>
+            <span class="document-date">{{ entry.document.created_at.strftime("%d.%m.%Y") }}</span>
+          </div>
+          <p class="document-page-count">Страниц: {{ entry.page_count }}</p>
+          {% if entry.statuses %}
+            <ul class="status-list" aria-label="Статусы обработки страниц">
+              {% for status in entry.statuses %}
+                <li><span class="status-badge">{{ status.label }}: {{ status.count }}</span></li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="muted-text">Страницы ещё не зарегистрированы.</p>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
+
+    {% if page_count > 1 %}
+      <nav class="pagination" aria-label="Страницы списка документов">
+        {% if page > 1 %}
+          <a class="button button-secondary" href="{{ url_for('documents') }}?page={{ page - 1 }}">Назад</a>
+        {% endif %}
+        <span aria-current="page">Страница {{ page }} из {{ page_count }}</span>
+        {% if page < page_count %}
+          <a class="button button-secondary" href="{{ url_for('documents') }}?page={{ page + 1 }}">Дальше</a>
+        {% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <section class="empty-state" aria-labelledby="empty-title">
+      <h2 id="empty-title">Пока нет документов</h2>
+      <p>Проиндексируйте PDF через CLI, чтобы он появился в этом списке.</p>
+      <code>.\venv\Scripts\python.exe main.py index "путь\к\файлу.pdf"</code>
+    </section>
+  {% endif %}
+{% endblock %}

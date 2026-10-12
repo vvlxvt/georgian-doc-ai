@@ -26,6 +26,7 @@ class Retriever:
         limit: int = 5,
         score_threshold: float | None = None,
         document_id: str | None = None,
+        document_ids: list[str] | None = None,
     ) -> list[SearchResult]:
         if not query.strip():
             return []
@@ -35,11 +36,19 @@ class Retriever:
 
         vector = self.embedding_service.embed(query)
 
-        results = self.vector_store.search(
-            vector=vector,
-            limit=limit,
-            document_id=document_id,
-        )
+        if document_ids is None:
+            results = self.vector_store.search(
+                vector=vector,
+                limit=limit,
+                document_id=document_id,
+            )
+        else:
+            results = self.vector_store.search(
+                vector=vector,
+                limit=limit,
+                document_id=document_id,
+                document_ids=document_ids,
+            )
 
         search_results = [
             SearchResult(

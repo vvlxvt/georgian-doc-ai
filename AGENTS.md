@@ -20,7 +20,7 @@ Language split to respect:
 | Concern | Choice | Notes |
 | --- | --- | --- |
 | Python | 3.12 | Type hints use PEP 604 syntax (`str \| None`, `StrEnum`) |
-| Web/API layer | none yet | `main.py` is a CLI; there is no FastAPI app |
+| Web/UI layer | FastAPI + Jinja2 | `main.py` remains the CLI; the web UI is an additive interface |
 | ORM | SQLAlchemy 2.0 | `Mapped[]` / `mapped_column`, `DeclarativeBase` |
 | Migrations | Alembic | Single revision `20261006_01`; see below |
 | Vector DB | qdrant-client | `QdrantClient(":memory:")` in tests |
@@ -31,8 +31,10 @@ Language split to respect:
 | Tests | pytest 9 | `integration` marker for real Ollama |
 | Formatting | black + ruff | line length 88 |
 
-Do not add FastAPI, LangChain, LlamaIndex, Celery, Redis, or any other
-framework. Keep the dependency surface as small as it is.
+The server-rendered UI uses FastAPI and Jinja2. Keep it additive to the CLI,
+reuse existing services and dependency wiring, and keep the dependency surface
+small. Do not add LangChain, LlamaIndex, Celery, Redis, or another framework
+without a demonstrated need and approval.
 
 ## Commands
 
@@ -56,6 +58,11 @@ Always run through the virtualenv interpreter, never a global `python`:
 ```
 main.py                 CLI entry point (`preflight` and `index` subcommands)
 app/
+  web.py                FastAPI app factory, health route mounting and static files
+  web_dependencies.py   Request-scoped database session dependency
+  web_routes.py         Server-rendered UI routes
+  templates/            Jinja2 base layout and workflow pages
+  static/css/           UI design tokens and responsive styles
   config.py             Settings (pydantic-settings), env-backed, frozen
   preflight.py          validate_runtime(): schema, Qdrant, Ollama, Tesseract
   database.py           engine + SessionLocal + init_db() (tests/convenience only)
@@ -92,6 +99,15 @@ a plain fake plus `unittest.mock.Mock`. Never instantiate a real
 **Dependency injection.** Classes take collaborators as constructor arguments
 and import nothing they do not own. Module-level singletons exist only in
 `dependencies.py`.
+
+**Web UI.** The UI is server-rendered with FastAPI and Jinja2 and is additive to
+the CLI. Page routes orchestrate existing services rather than duplicate RAG
+or ingestion logic. Keep templates, styles, and browser scripts separate;
+preserve existing CLI behavior. Render user-facing UI text in Russian, keep
+identifiers and documentation in English, and never expose secrets in rendered
+HTML or static assets. The initial UI is local-only and must be run bound to
+`127.0.0.1`; do not expose it to a network without adding approved
+authentication and authorization.
 
 **Process-scoped services.** `app/dependencies.py` caches services with
 `functools.lru_cache(maxsize=1)`. Tests that patch collaborators must call

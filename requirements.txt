@@ -19,6 +19,7 @@ colorama==0.4.6
 colorlog==6.12.0
 crc32c==2.9.post0
 cryptography==50.0.1
+fastapi==0.143.0
 filelock==4.0.12
 frozenlist==1.8.0
 fsspec==2026.9.0
@@ -50,6 +51,7 @@ narwhals==2.26.0
 networkx==3.7
 numpy==2.5.3
 opencv-contrib-python==4.10.0.84
+opentelemetry-api==1.45.1
 opt-einsum==3.3.0
 packaging==26.3
 pandas==3.0.6
@@ -77,6 +79,7 @@ pytest==9.1.1
 python-bidi==0.6.11
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.3
+python-multipart==0.0.32
 pytokens==0.4.1
 pywin32==312
 PyYAML==6.0.3
@@ -95,6 +98,7 @@ shapely==2.1.2
 shellingham==1.5.4
 six==1.17.0
 SQLAlchemy==2.0.54
+starlette==1.7.0
 sympy==1.14.0
 threadpoolctl==3.7.0
 tokenizers==0.23.2
@@ -107,5 +111,6 @@ typing_extensions==4.16.0
 tzdata==2026.4
 ujson==6.0.0
 urllib3==2.8.0
+uvicorn==0.54.0
 wcwidth==0.8.4
 yarl==1.25.1

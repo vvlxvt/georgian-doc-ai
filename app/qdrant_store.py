@@ -101,16 +101,22 @@ class QdrantVectorStore(VectorStore):
         vector: list[float],
         limit: int = 5,
         document_id: str | None = None,
+        document_ids: list[str] | None = None,
     ) -> list[dict]:
         query_filter = None
+        selected_document_ids = document_ids
 
-        if document_id is not None:
+        if selected_document_ids is None and document_id is not None:
+            selected_document_ids = [document_id]
+
+        if selected_document_ids:
             query_filter = Filter(
-                must=[
+                should=[
                     FieldCondition(
                         key="document_id",
                         match=MatchValue(value=document_id),
-                    ),
+                    )
+                    for document_id in selected_document_ids
                 ],
             )
 

@@ -20,12 +20,14 @@ class RAGPipeline:
         limit: int = 5,
         score_threshold: float | None = None,
         document_id: str | None = None,
+        document_ids: list[str] | None = None,
     ) -> str:
         results = self.retriever.search(
             query=question,
             limit=limit,
             score_threshold=score_threshold,
             document_id=document_id,
+            document_ids=document_ids,
         )
 
         context = self.context_builder.build(results)

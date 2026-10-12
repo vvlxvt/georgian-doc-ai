@@ -27,6 +27,7 @@ class FakeVectorStore(VectorStore):
         limit=5,
         score_threshold=None,
         document_id=None,
+        document_ids=None,
     ):
         results = [
             {
@@ -42,6 +43,12 @@ class FakeVectorStore(VectorStore):
                 result
                 for result in results
                 if result["payload"].get("document_id") == document_id
+            ]
+        if document_ids is not None:
+            results = [
+                result
+                for result in results
+                if result["payload"].get("document_id") in document_ids
             ]
 
         if score_threshold is not None:
@@ -161,3 +168,29 @@ def test_retriever_filters_by_document_id():
 
     assert len(results) == 1
     assert results[0].id == "chunk-1"
+
+
+def test_retriever_filters_by_multiple_document_ids():
+    embedding_service = FakeEmbeddingService()
+    vector_store = FakeVectorStore()
+
+    for index, document_id in enumerate(("doc-1", "doc-2", "doc-3")):
+        vector_id = f"chunk-{document_id}"
+        vector_store.upsert(
+            vector_id=vector_id,
+            vector=[1.0, 0.0, 0.0],
+            payload={"document_id": document_id, "text": document_id},
+        )
+        vector_store.items[vector_id]["score"] = 1.0
+
+    retriever = Retriever(embedding_service, vector_store)
+
+    results = retriever.search(
+        query="question",
+        document_ids=["doc-1", "doc-3"],
+    )
+
+    assert {result.payload["document_id"] for result in results} == {
+        "doc-1",
+        "doc-3",
+    }

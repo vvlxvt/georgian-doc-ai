@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Задать вопрос — Georgian Document RAG{% endblock %}
+{% block meta_description %}Задайте вопрос по проиндексированным PDF-документам и получите ответ на русском языке.{% endblock %}
+
+{% block navigation %}
+  <a class="nav-link" href="{{ url_for('home') }}">Главная</a>
+  <a class="nav-link" href="{{ url_for('documents') }}">Документы</a>
+  <a class="nav-link" href="{{ url_for('upload_form') }}">Загрузить PDF</a>
+  <a class="nav-link is-active" href="{{ url_for('ask_form') }}" aria-current="page">Задать вопрос</a>
+{% endblock %}
+
+{% block content %}
+  <section class="page-heading" aria-labelledby="page-title">
+    <p class="eyebrow">Поиск по смыслу</p>
+    <h1 id="page-title">Задать вопрос</h1>
+    <p class="page-description">
+      Ответ будет сформирован по найденным фрагментам и может содержать ссылки
+      на страницы исходных документов.
+    </p>
+  </section>
+
+  {% if error %}
+    <div class="alert alert-error" role="alert">{{ error }}</div>
+  {% endif %}
+
+  <form
+    class="form-card question-form"
+    action="{{ url_for('ask_question') }}"
+    method="post"
+    data-pending-message="Ищем информацию в документах и формируем ответ..."
+    data-pending-label="Ищем ответ..."
+  >
+    <fieldset class="document-filter">
+      <legend>Искать в документах</legend>
+      <p class="field-help" id="document-filter-help">
+        Если ничего не отметить, поиск будет выполнен по всем документам.
+      </p>
+      {% if documents %}
+        <div class="document-options" aria-describedby="document-filter-help">
+          {% for document in documents %}
+            <label class="document-option">
+              <input
+                type="checkbox"
+                name="document_ids"
+                value="{{ document.id }}"
+                {% if document.id in selected_document_ids %}checked{% endif %}
+              >
+              <span>{{ document.filename }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="field-help">Документы ещё не добавлены.</p>
+      {% endif %}
+    </fieldset>
+    <div class="form-field">
+      <label for="question">Ваш вопрос</label>
+      <textarea id="question" name="question" rows="4" maxlength="{{ max_question_chars }}" required aria-describedby="question-help">{{ question or "" }}</textarea>
+      <p class="field-help" id="question-help">Не более {{ max_question_chars }} символов. Ответ будет на русском языке.</p>
+    </div>
+    <button class="button button-primary" type="submit">Найти ответ</button>
+    <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
+  </form>
+
+  {% if answer is not none %}
+    <section class="answer-card" aria-labelledby="answer-title" aria-live="polite">
+      <p class="eyebrow">Ответ по документам</p>
+      <h2 id="answer-title">Результат</h2>
+      <p class="answer-text">{{ answer }}</p>
+    </section>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="{% block meta_description %}Поиск по грузинским документам с ответами на русском языке.{% endblock %}">
+    <meta name="theme-color" content="#f7f8fa">
+    <title>{% block title %}Georgian Document RAG{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/variables.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/main.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/layout.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/components.css') }}">
+    {% block head %}{% endblock %}
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Перейти к содержимому</a>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="{{ url_for('home') }}" aria-label="Georgian Document RAG — главная">
+          <span class="brand-mark" aria-hidden="true">G</span>
+          <span class="brand-copy">
+            <span class="brand-name">Документы Грузии</span>
+            <span class="brand-caption">Поиск с ответами и ссылками на страницы</span>
+          </span>
+        </a>
+        <nav class="site-nav" aria-label="Основная навигация">
+          {% block navigation %}
+            <a class="nav-link is-active" href="{{ url_for('home') }}" aria-current="page">Главная</a>
+            <a class="nav-link" href="{{ url_for('documents') }}">Документы</a>
+            <a class="nav-link" href="{{ url_for('upload_form') }}">Загрузить PDF</a>
+            <a class="nav-link" href="{{ url_for('ask_form') }}">Задать вопрос</a>
+          {% endblock %}
+        </nav>
+      </div>
+    </header>
+    <main id="main-content" class="container main-content">
+      {% block content %}{% endblock %}
+    </main>
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <span>Georgian Document RAG</span>
+        <span>Ответы формируются по содержимому документов</span>
+      </div>
+    </footer>
+    <script src="{{ url_for('static', path='/js/form-pending.js') }}" defer></script>
+  </body>
+</html>

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Загрузить PDF — Georgian Document RAG{% endblock %}
+{% block meta_description %}Загрузите грузинский PDF для извлечения текста и поиска по документу.{% endblock %}
+
+{% block navigation %}
+  <a class="nav-link" href="{{ url_for('home') }}">Главная</a>
+  <a class="nav-link" href="{{ url_for('documents') }}">Документы</a>
+  <a class="nav-link is-active" href="{{ url_for('upload_form') }}" aria-current="page">Загрузить PDF</a>
+  <a class="nav-link" href="{{ url_for('ask_form') }}">Задать вопрос</a>
+{% endblock %}
+
+{% block content %}
+  <section class="page-heading" aria-labelledby="page-title">
+    <p class="eyebrow">Индексация</p>
+    <h1 id="page-title">Загрузить документ</h1>
+    <p class="page-description">
+      Добавьте PDF, чтобы извлечь текст и подготовить его к поиску.
+      Максимальный размер файла — {{ max_upload_mib }} МиБ.
+    </p>
+  </section>
+
+  {% if error %}
+    <div class="alert alert-error" role="alert">{{ error }}</div>
+  {% endif %}
+
+  {% if document_id %}
+    <div class="alert alert-success" role="status">
+      <strong>Документ проиндексирован.</strong>
+      <span>{{ filename }}</span>
+      <a href="{{ url_for('documents') }}">Открыть список документов</a>
+    </div>
+  {% endif %}
+
+  <form
+    class="form-card"
+    action="{{ url_for('upload_document') }}"
+    method="post"
+    enctype="multipart/form-data"
+    data-pending-message="Файл загружается и индексируется. Это может занять некоторое время."
+    data-pending-label="Идёт индексация..."
+  >
+    <div class="form-field">
+      <label for="pdf-file">PDF-файл</label>
+      <input id="pdf-file" name="file" type="file" accept="application/pdf,.pdf" required aria-describedby="file-help">
+      <p class="field-help" id="file-help">Поддерживаются PDF-файлы размером до {{ max_upload_mib }} МиБ.</p>
+    </div>
+    <button class="button button-primary" type="submit">Загрузить и проиндексировать</button>
+    <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
+  </form>
+{% endblock %}
