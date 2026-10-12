@@ -18,6 +18,11 @@ def test_settings_have_expected_defaults(monkeypatch):
     assert config.embedding_size == 1024
     assert config.ollama_model == "llama3.2:3b"
     assert config.ollama_url == "http://localhost:11434"
+    # default LLM provider and OpenRouter defaults
+    assert config.llm_provider == "openrouter"
+    assert config.openrouter_url == "https://api.openrouter.ai"
+    assert config.openrouter_api_key == ""
+    assert config.openrouter_model == "gpt-4o-mini"
     assert config.database_url == "sqlite:///data/app.db"
     assert config.tesseract_languages == "kat+eng"
     assert config.chunk_max_length == 1000

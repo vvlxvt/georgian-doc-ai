@@ -21,6 +21,15 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.2:3b"
     ollama_url: str = "http://localhost:11434"
 
+    # LLM provider configuration
+    llm_provider: str = "openrouter"  # one of: 'openrouter', 'ollama'
+
+    # OpenRouter (optional; used when llm_provider == 'openrouter')
+    openrouter_url: str = "https://api.openrouter.ai"
+    openrouter_api_key: str = ""
+    openrouter_model: str = "gpt-4o-mini"  # default example model
+    openrouter_timeout: float = 120.0
+
     tesseract_languages: str = "kat+eng"
 
     chunk_max_length: int = 1000

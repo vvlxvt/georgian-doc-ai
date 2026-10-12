@@ -22,7 +22,7 @@ def test_rag_pipeline_reuses_process_scoped_services(monkeypatch):
             calls["store"] += 1
 
     class FakeLLMService:
-        def __init__(self, model, base_url):
+        def __init__(self, *args, **kwargs):
             calls["llm"] += 1
 
     monkeypatch.setattr(
@@ -32,7 +32,9 @@ def test_rag_pipeline_reuses_process_scoped_services(monkeypatch):
     )
     monkeypatch.setattr(dependencies, "QdrantClient", FakeQdrantClient)
     monkeypatch.setattr(dependencies, "QdrantVectorStore", FakeVectorStore)
+    # tests run with default provider 'openrouter' so patch both LLM implementations
     monkeypatch.setattr(dependencies, "OllamaLLMService", FakeLLMService)
+    monkeypatch.setattr(dependencies, "OpenRouterLLMService", FakeLLMService)
     dependencies.reset_application_services()
 
     first_pipeline = dependencies.create_rag_pipeline()
@@ -65,7 +67,7 @@ def test_reset_application_services_creates_fresh_pipeline(monkeypatch):
             pass
 
     class FakeLLMService:
-        def __init__(self, model, base_url):
+        def __init__(self, *args, **kwargs):
             pass
 
     monkeypatch.setattr(
@@ -76,6 +78,7 @@ def test_reset_application_services_creates_fresh_pipeline(monkeypatch):
     monkeypatch.setattr(dependencies, "QdrantClient", FakeQdrantClient)
     monkeypatch.setattr(dependencies, "QdrantVectorStore", FakeVectorStore)
     monkeypatch.setattr(dependencies, "OllamaLLMService", FakeLLMService)
+    monkeypatch.setattr(dependencies, "OpenRouterLLMService", FakeLLMService)
     dependencies.reset_application_services()
 
     first_pipeline = dependencies.create_rag_pipeline()
