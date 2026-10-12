@@ -35,7 +35,10 @@ def validate_schema(config: Settings) -> None:
 
 def validate_qdrant(config: Settings) -> None:
     try:
-        QdrantClient(url=config.qdrant_url).get_collections()
+        QdrantClient(
+            url=config.qdrant_url,
+            api_key=config.qdrant_api_key or None,
+        ).get_collections()
     except Exception as exc:
         raise PreflightError(
             f"Qdrant is unavailable at {config.qdrant_url}: {exc}"

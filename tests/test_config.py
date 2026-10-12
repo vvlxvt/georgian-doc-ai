@@ -12,6 +12,7 @@ def test_settings_have_expected_defaults(monkeypatch):
     config = Settings(_env_file=None)
 
     assert config.qdrant_url == "http://localhost:6333"
+    assert config.qdrant_api_key == ""
     assert config.qdrant_collection == "documents"
     assert config.embedding_model == "BAAI/bge-m3"
     assert config.embedding_size == 1024
@@ -26,11 +27,13 @@ def test_settings_have_expected_defaults(monkeypatch):
 
 def test_settings_read_environment_overrides(monkeypatch):
     monkeypatch.setenv("QDRANT_URL", "http://qdrant.example:6333")
+    monkeypatch.setenv("QDRANT_API_KEY", "test-api-key")
     monkeypatch.setenv("EMBEDDING_SIZE", "768")
 
     config = Settings(_env_file=None)
 
     assert config.qdrant_url == "http://qdrant.example:6333"
+    assert config.qdrant_api_key == "test-api-key"
     assert config.embedding_size == 768
 
 

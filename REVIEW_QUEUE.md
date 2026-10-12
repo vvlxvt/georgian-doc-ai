@@ -1,8 +1,8 @@
 # Review Queue
 
 ## Status
-- Total: 8
-- Completed: 8
+- Total: 9
+- Completed: 9
 - Current: none
 - Blocked: 0
 
@@ -101,3 +101,10 @@
 Verified against a clean database: fresh schema rejected by preflight, `alembic upgrade head` creating all three tables plus the unique `(document_id, page_number)` index, preflight then passing, and indexing `data/input/georgian_scan.pdf` producing 4 pages and 37 retrievable chunks whose payloads carry `document_id`, `page_id`, `page_number`, `chunk_index`, and `text`. Re-running the same file skipped all 4 pages and added no chunks.
 
 Fixed alongside this item: `PDFPage` required a `_doc_path` argument that `PDFReader.pages()` never passed, which made every real ingestion call raise `TypeError`; the vestigial field was removed. Also moved the real-model tests in `tests/test_embeddings.py` behind the `integration` marker and a `RUN_REAL_MODEL_TESTS=1` opt-in (loading `BAAI/bge-m3` aborts the interpreter with a `torch` access violation, a hard crash that cannot be caught, so the skip must precede model construction), removed a module-level live Ollama call from `tests/test_llm.py` in favour of the new `OllamaLLMService._post` seam, pinned pytest's base temp directory into `.tmp/pytest` so an ACL-denied `%TEMP%` cannot fail the suite, deleted three dead scripts from `tests/`, and cleared the remaining ruff findings. `pytest -m "not integration"` is 100 passed with `ruff` and `black` clean, and `pytest -m integration` passes its real-Ollama RAG case.
+
+### 9. [x] Support remote Qdrant endpoints and API keys
+**Changes:** Keep the local endpoint as the default while allowing a remote Qdrant URL and optional API key from the environment. Pass the configured credentials through application wiring and preflight, and document remote setup without committing secrets.
+
+**Files:** `app/config.py`, `app/dependencies.py`, `app/preflight.py`, Qdrant configuration/preflight tests, `.env.example`, and `README.md`.
+
+**Verification:** Configuration tests assert the environment overrides; dependency and preflight tests assert that the remote URL and API key reach the Qdrant client.

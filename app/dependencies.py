@@ -24,7 +24,10 @@ def get_embedding_service() -> HuggingFaceEmbeddingService:
 
 @lru_cache(maxsize=1)
 def get_qdrant_client() -> QdrantClient:
-    return QdrantClient(url=settings.qdrant_url)
+    return QdrantClient(
+        url=settings.qdrant_url,
+        api_key=settings.qdrant_api_key or None,
+    )
 
 
 @lru_cache(maxsize=1)

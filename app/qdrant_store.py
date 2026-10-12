@@ -5,6 +5,7 @@ from qdrant_client.models import (
     Filter,
     HasIdCondition,
     MatchValue,
+    PayloadSchemaType,
     PointStruct,
     VectorParams,
 )
@@ -35,19 +36,36 @@ class QdrantVectorStore(VectorStore):
 
         if exists:
             self._validate_collection()
-            return
+        else:
+            self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=VectorParams(
+                    size=self.vector_size,
+                    distance=Distance.COSINE,
+                ),
+            )
 
-        self.client.create_collection(
-            collection_name=self.collection_name,
-            vectors_config=VectorParams(
-                size=self.vector_size,
-                distance=Distance.COSINE,
-            ),
-        )
+        self._ensure_payload_indexes()
+
+    def _ensure_payload_indexes(self) -> None:
+        for field_name in ("document_id", "page_id"):
+            self.client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name=field_name,
+                field_schema=PayloadSchemaType.KEYWORD,
+            )
 
     def _validate_collection(self) -> None:
         collection = self.client.get_collection(self.collection_name)
         vectors = collection.config.params.vectors
+
+        if isinstance(vectors, dict):
+            if set(vectors) != {""}:
+                raise ValueError(
+                    f"Collection '{self.collection_name}' must use "
+                    "a single unnamed vector"
+                )
+            vectors = vectors[""]
 
         if not isinstance(vectors, VectorParams):
             raise ValueError(

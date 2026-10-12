@@ -21,7 +21,10 @@ External services sit behind abstract interfaces (`EmbeddingService`, `VectorSto
    .\venv\Scripts\python.exe -m pip install -r requirements.txt
    ```
 
-2. Copy `.env.example` to `.env` and adjust service URLs or model names.
+2. Copy `.env.example` to `.env` and adjust service URLs or model names. For a
+   remote Qdrant instance, set `QDRANT_URL` to its endpoint and set
+   `QDRANT_API_KEY` if the instance requires authentication. Keep the API key
+   in `.env` or another secret store; do not commit it.
 3. Start Qdrant and Ollama, install the configured Ollama model, and install Tesseract language data for `kat` and `eng`.
 4. Apply migrations:
 
@@ -50,7 +53,8 @@ All operational settings are environment-backed; see `.env.example` for the full
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | `sqlite:///data/app.db` | SQLAlchemy URL |
-| `QDRANT_URL` | `http://localhost:6333` | |
+| `QDRANT_URL` | `http://localhost:6333` | Remote instances can use their HTTPS endpoint |
+| `QDRANT_API_KEY` | *(empty)* | Optional; set for authenticated remote Qdrant instances |
 | `QDRANT_COLLECTION` | `documents` | |
 | `EMBEDDING_MODEL` | `BAAI/bge-m3` | |
 | `EMBEDDING_SIZE` | `1024` | Must match the Qdrant collection |
@@ -62,6 +66,8 @@ All operational settings are environment-backed; see `.env.example` for the full
 | `MIN_TEXT_LENGTH` | `20` | Below this a page goes to OCR |
 
 Changing `EMBEDDING_MODEL` or `EMBEDDING_SIZE` requires a compatible Qdrant collection and re-indexing all documents. `QdrantVectorStore` refuses to start against a collection whose vector size or distance does not match, so the mismatch surfaces at startup rather than at indexing time.
+
+On startup, the application also ensures keyword payload indexes for `document_id` and `page_id`, which are required for filtered retrieval and stale-vector cleanup.
 
 ## Migrations
 

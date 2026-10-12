@@ -14,7 +14,7 @@ def test_rag_pipeline_reuses_process_scoped_services(monkeypatch):
             calls["embedding"] += 1
 
     class FakeQdrantClient:
-        def __init__(self, url):
+        def __init__(self, url, api_key=None):
             calls["qdrant"] += 1
 
     class FakeVectorStore:
@@ -57,7 +57,7 @@ def test_reset_application_services_creates_fresh_pipeline(monkeypatch):
             created_embeddings.append(self)
 
     class FakeQdrantClient:
-        def __init__(self, url):
+        def __init__(self, url, api_key=None):
             pass
 
     class FakeVectorStore:
@@ -84,5 +84,36 @@ def test_reset_application_services_creates_fresh_pipeline(monkeypatch):
 
     assert first_pipeline is not second_pipeline
     assert len(created_embeddings) == 2
+
+    dependencies.reset_application_services()
+
+
+def test_qdrant_client_uses_configured_remote_credentials(monkeypatch):
+    from app.config import Settings
+
+    client_args = {}
+
+    class FakeQdrantClient:
+        def __init__(self, **kwargs):
+            client_args.update(kwargs)
+
+    monkeypatch.setattr(dependencies, "QdrantClient", FakeQdrantClient)
+    monkeypatch.setattr(
+        dependencies,
+        "settings",
+        Settings(
+            qdrant_url="https://qdrant.example",
+            qdrant_api_key="test-api-key",
+            _env_file=None,
+        ),
+    )
+    dependencies.reset_application_services()
+
+    dependencies.get_qdrant_client()
+
+    assert client_args == {
+        "url": "https://qdrant.example",
+        "api_key": "test-api-key",
+    }
 
     dependencies.reset_application_services()

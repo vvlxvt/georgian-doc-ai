@@ -156,6 +156,7 @@ mirrored in `.env.example`. `Settings` is frozen and `extra="ignore"`.
 | --- | --- |
 | `DATABASE_URL` | `sqlite:///data/app.db` |
 | `QDRANT_URL` | `http://localhost:6333` |
+| `QDRANT_API_KEY` | Empty; optional for authenticated remote instances |
 | `QDRANT_COLLECTION` | `documents` |
 | `EMBEDDING_MODEL` | `BAAI/bge-m3` |
 | `EMBEDDING_SIZE` | `1024` |

@@ -43,7 +43,7 @@ def test_validate_ollama_rejects_missing_model(monkeypatch):
 
 def test_validate_qdrant_wraps_connection_error(monkeypatch):
     class BrokenClient:
-        def __init__(self, url):
+        def __init__(self, url, api_key=None):
             pass
 
         def get_collections(self):
@@ -53,6 +53,32 @@ def test_validate_qdrant_wraps_connection_error(monkeypatch):
 
     with pytest.raises(PreflightError, match="Qdrant is unavailable"):
         validate_qdrant(Settings(_env_file=None))
+
+
+def test_validate_qdrant_uses_configured_api_key(monkeypatch):
+    client_args = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            client_args.update(kwargs)
+
+        def get_collections(self):
+            return None
+
+    monkeypatch.setattr("app.preflight.QdrantClient", FakeClient)
+
+    validate_qdrant(
+        Settings(
+            qdrant_url="https://qdrant.example",
+            qdrant_api_key="test-api-key",
+            _env_file=None,
+        )
+    )
+
+    assert client_args == {
+        "url": "https://qdrant.example",
+        "api_key": "test-api-key",
+    }
 
 
 def test_validate_tesseract_rejects_missing_georgian_language(monkeypatch):

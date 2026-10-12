@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -19,14 +20,29 @@ def create_store():
     )
 
 
-def test_qdrant_store_creates_collection():
-    store = create_store()
+def test_qdrant_store_creates_collection(monkeypatch):
+    client = QdrantClient(":memory:")
+    indexed_fields = []
+    monkeypatch.setattr(
+        client,
+        "create_payload_index",
+        lambda **kwargs: indexed_fields.append(kwargs),
+    )
+    store = QdrantVectorStore(
+        client=client,
+        collection_name="test_chunks",
+        vector_size=VECTOR_SIZE,
+    )
 
     collections = store.client.get_collections()
 
     names = [collection.name for collection in collections.collections]
 
     assert "test_chunks" in names
+    assert {item["field_name"] for item in indexed_fields} == {
+        "document_id",
+        "page_id",
+    }
 
 
 def test_qdrant_store_accepts_compatible_existing_collection():
@@ -43,6 +59,61 @@ def test_qdrant_store_accepts_compatible_existing_collection():
     )
 
     assert store.collection_name == "test_chunks"
+
+
+def test_qdrant_store_accepts_remote_unnamed_vector_config(monkeypatch):
+    client = QdrantClient(":memory:")
+    client.create_collection(
+        collection_name="test_chunks",
+        vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+    )
+    collection = client.get_collection("test_chunks")
+    monkeypatch.setattr(
+        client,
+        "get_collection",
+        lambda collection_name: SimpleNamespace(
+            config=SimpleNamespace(
+                params=SimpleNamespace(
+                    vectors={"": collection.config.params.vectors},
+                )
+            )
+        ),
+    )
+
+    store = QdrantVectorStore(
+        client=client,
+        collection_name="test_chunks",
+        vector_size=VECTOR_SIZE,
+    )
+
+    assert store.collection_name == "test_chunks"
+
+
+def test_qdrant_store_rejects_named_remote_vector_config(monkeypatch):
+    client = QdrantClient(":memory:")
+    client.create_collection(
+        collection_name="test_chunks",
+        vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+    )
+    collection = client.get_collection("test_chunks")
+    monkeypatch.setattr(
+        client,
+        "get_collection",
+        lambda collection_name: SimpleNamespace(
+            config=SimpleNamespace(
+                params=SimpleNamespace(
+                    vectors={"named": collection.config.params.vectors},
+                )
+            )
+        ),
+    )
+
+    with pytest.raises(ValueError, match="single unnamed vector"):
+        QdrantVectorStore(
+            client=client,
+            collection_name="test_chunks",
+            vector_size=VECTOR_SIZE,
+        )
 
 
 @pytest.mark.parametrize(

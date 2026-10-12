@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///data/app.db"
 
     qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: str = ""
     qdrant_collection: str = "documents"
 
     embedding_model: str = "BAAI/bge-m3"
