@@ -30,7 +30,7 @@ class RAGPipeline:
             document_ids=document_ids,
         )
 
-        context = self.context_builder.build(results)
+        context = self.context_builder.build_context(results)
 
         return self.answer_generator.generate(
             question=question,

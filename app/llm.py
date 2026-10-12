@@ -47,6 +47,8 @@ class LLMError(Exception):
 @dataclass(frozen=True)
 class LLMRequest:
     prompt: str
+    system_prompt: str | None = None
+    prompt_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -293,9 +295,12 @@ class OllamaLLMService(LLMService):
         )
 
     def call(self, request: LLMRequest) -> LLMResponse:
+        prompt = "\n\n".join(
+            part for part in (request.system_prompt, request.prompt) if part
+        )
         payload = {
             "model": self.model,
-            "prompt": request.prompt,
+            "prompt": prompt,
             "stream": False,
         }
         response = _post_with_error_mapping(
@@ -366,9 +371,13 @@ class OpenRouterLLMService(LLMService):
                 provider=self.provider,
                 model=self.model,
             )
+        messages = []
+        if request.system_prompt:
+            messages.append({"role": "system", "content": request.system_prompt})
+        messages.append({"role": "user", "content": request.prompt})
         payload = {
             "model": self.model,
-            "messages": [{"role": "user", "content": request.prompt}],
+            "messages": messages,
             "stream": False,
         }
         response = _post_with_error_mapping(

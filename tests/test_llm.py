@@ -97,6 +97,28 @@ def test_ollama_llm_service_maps_available_usage_metadata(monkeypatch):
     assert response.usage.total_tokens == 10
 
 
+def test_ollama_llm_service_combines_system_and_user_prompts(monkeypatch):
+    llm = OllamaLLMService(model="test-model", base_url="http://testserver")
+    payloads = []
+    monkeypatch.setattr(
+        llm,
+        "_post",
+        lambda payload: (
+            payloads.append(payload) or FakeResponse({"response": "Ответ"})
+        ),
+    )
+
+    llm.call(
+        LLMRequest(
+            system_prompt="System instructions",
+            prompt="Question and evidence",
+            prompt_version="answer-v1",
+        )
+    )
+
+    assert payloads[0]["prompt"] == "System instructions\n\nQuestion and evidence"
+
+
 @pytest.mark.parametrize(
     "payload",
     [{}, {"response": None}, {"response": ""}, []],

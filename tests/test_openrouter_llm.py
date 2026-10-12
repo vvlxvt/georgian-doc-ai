@@ -185,12 +185,21 @@ def test_openrouter_llm_service_serializes_request_and_timeout(monkeypatch):
         read_timeout=18.0,
     )
 
-    response = llm.call(LLMRequest(prompt="Тестовый вопрос"))
+    response = llm.call(
+        LLMRequest(
+            system_prompt="Системные инструкции",
+            prompt="Тестовый вопрос",
+            prompt_version="answer-v1",
+        )
+    )
 
     assert call["url"] == ("https://openrouter.example/api/v1/chat/completions")
     assert call["json"] == {
         "model": "test-model",
-        "messages": [{"role": "user", "content": "Тестовый вопрос"}],
+        "messages": [
+            {"role": "system", "content": "Системные инструкции"},
+            {"role": "user", "content": "Тестовый вопрос"},
+        ],
         "stream": False,
     }
     assert call["headers"]["Authorization"] == "Bearer test-key"

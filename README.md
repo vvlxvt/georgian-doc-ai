@@ -9,7 +9,7 @@ Source documents are Georgian, answers and prompt text are Russian, and all code
 Ingestion and query paths are separate:
 
 - **Ingestion**: `app/pipeline.py` reads a PDF (`app/pdf.py`), uses the native text layer when a page has enough text and falls back to Tesseract OCR (`app/ocr.py`), normalizes it (`app/text.py`), chunks it by characters (`app/chunking.py`), stores pages and chunks in SQLite (`app/models.py`, `app/repositories.py`), and indexes the chunks in Qdrant (`app/indexing.py`, `app/qdrant_store.py`).
-- **Query**: `app/rag.py` embeds the question (`app/embeddings.py`), searches Qdrant (`app/retrieval.py`), wraps the hits as untrusted source blocks (`app/context.py`), and asks the configured LLM provider for a Russian answer with `[стр. N]` citations (`app/answer.py`, `app/llm.py`). OpenRouter is selected by default; Ollama can be selected explicitly.
+- **Query**: `app/rag.py` embeds the question (`app/embeddings.py`), searches Qdrant (`app/retrieval.py`), validates and wraps hits as untrusted source blocks with request-local IDs (`app/context.py`), and asks the configured LLM provider for a Russian answer with `[стр. N]` citations (`app/answer.py`, `app/llm.py`). Prompt instructions are versioned and separated from evidence where the provider supports separate messages. OpenRouter is selected by default; Ollama can be selected explicitly.
 
 External services sit behind abstract interfaces (`EmbeddingService`, `VectorStore`, `OCRProcessor`, `LLMService`) and are constructed once per process in `app/dependencies.py`.
 

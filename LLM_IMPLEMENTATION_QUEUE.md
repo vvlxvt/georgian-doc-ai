@@ -200,12 +200,12 @@ mode, context size, streaming, or token/cost metadata.
 ## Progress
 
 - Total tasks: 8
-- Completed: 3 (decisions recorded and tasks 2-3 implemented)
-- Current task: task 4
+- Completed: 4 (decisions recorded and tasks 2-4 implemented)
+- Current task: task 5
 - Blocked: none
-- Remaining: 4 (task 7 explicitly declined)
-- Latest test result: 159 passed, 3 deselected; Ruff and Black passed
-- Latest commit: `53d3e2e`
+- Remaining: 3 (task 7 explicitly declined)
+- Latest test result: 163 passed, 3 deselected; Ruff and Black passed
+- Latest commit: `5468fdb`
 
 ## Tasks
 
@@ -300,11 +300,11 @@ mode, context size, streaming, or token/cost metadata.
   work through mocked tests, missing configuration fails clearly, and no
   fallback or secret leakage is possible.
 * Commit message: `feat(llm): add configurable OpenRouter provider`
-* Commit hash: recorded after commit
+* Commit hash: `5468fdb`
 
 ### Task 4: Versioning prompts and preparing source-aware context
 
-* Status: `[ ]`
+* Status: `[x]`
 * Goal: Make prompt changes reviewable and provide trustworthy source
   references for response validation.
 * Review/requirement: Requirements 8 and 9 of `prompt.txt`.
@@ -333,7 +333,7 @@ mode, context size, streaming, or token/cost metadata.
   provenance; prompt version is available to diagnostics; retrieved text
   remains untrusted and outside privileged instructions.
 * Commit message: `feat(rag): add versioned source-aware prompts`
-* Commit hash: pending
+* Commit hash: recorded after commit
 
 ### Task 5: Parsing structured answers and validating citations
 

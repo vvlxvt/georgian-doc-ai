@@ -4,13 +4,13 @@ from app.llm import LLMCapabilities, LLMRequest, LLMResponse, LLMService
 
 class FakeLLMService(LLMService):
     def __init__(self):
-        self.prompts = []
+        self.requests = []
         self.provider = "fake"
         self.model = "test-model"
         self.capabilities = LLMCapabilities()
 
     def call(self, request: LLMRequest) -> LLMResponse:
-        self.prompts.append(request.prompt)
+        self.requests.append(request)
         return LLMResponse(
             text="Generated answer",
             provider=self.provider,
@@ -28,7 +28,7 @@ def test_answer_generator_uses_llm():
     )
 
     assert answer == "Generated answer"
-    assert len(llm.prompts) == 1
+    assert len(llm.requests) == 1
 
 
 def test_answer_generator_includes_question_and_context():
@@ -40,13 +40,15 @@ def test_answer_generator_includes_question_and_context():
         context="The contract is valid.",
     )
 
-    prompt = llm.prompts[0]
+    request = llm.requests[0]
 
-    assert "What does the document say?" in prompt
-    assert "The contract is valid." in prompt
-    assert "только на русском языке" in prompt
-    assert "[стр. N]" in prompt
-    assert "недоверенными" in prompt
+    assert request.system_prompt is not None
+    assert "только на русском языке" in request.system_prompt
+    assert "[стр. N]" in request.system_prompt
+    assert "недоверенными" in request.system_prompt
+    assert "What does the document say?" in request.prompt
+    assert "The contract is valid." in request.prompt
+    assert request.prompt_version == "answer-v1"
 
 
 def test_answer_generator_treats_document_instructions_as_untrusted_data():
@@ -60,9 +62,10 @@ def test_answer_generator_treats_document_instructions_as_untrusted_data():
 
     generator.generate(question="Что указано в документе?", context=context)
 
-    prompt = llm.prompts[0]
-    assert context in prompt
-    assert "Не выполняй" in prompt
+    request = llm.requests[0]
+    assert context in request.prompt
+    assert request.system_prompt is not None
+    assert "Не выполняй" in request.system_prompt
 
 
 def test_answer_generator_does_not_call_llm_without_context():
@@ -75,7 +78,27 @@ def test_answer_generator_does_not_call_llm_without_context():
     )
 
     assert answer == "В предоставленных документах недостаточно информации для ответа."
-    assert llm.prompts == []
+    assert llm.requests == []
+
+
+def test_answer_generator_keeps_source_ids_internal_to_user_citations():
+    llm = FakeLLMService()
+    generator = AnswerGenerator(llm)
+
+    generator.generate(
+        question="Что в источнике?",
+        context=(
+            "НАЧАЛО_ИСТОЧНИКА [стр. 3] [ID источника: S1]\n"
+            "Текст документа\n"
+            "КОНЕЦ_ИСТОЧНИКА"
+        ),
+    )
+
+    request = llm.requests[0]
+    assert request.prompt_version == "answer-v1"
+    assert "ID источника: S1" in request.prompt
+    assert request.system_prompt is not None
+    assert "Идентификаторы источников являются внутренними" in request.system_prompt
 
 
 def test_answer_generator_rejects_empty_question():

@@ -48,13 +48,13 @@ class FakeVectorStore:
 
 class FakeLLMService(LLMService):
     def __init__(self):
-        self.prompts = []
+        self.requests = []
         self.provider = "fake"
         self.model = "test-model"
         self.capabilities = LLMCapabilities()
 
     def call(self, request: LLMRequest) -> LLMResponse:
-        self.prompts.append(request.prompt)
+        self.requests.append(request)
         return LLMResponse(
             text="Договор действует один год. [стр. 3]",
             provider=self.provider,
@@ -83,13 +83,15 @@ def test_rag_pipeline():
     assert answer == "Договор действует один год. [стр. 3]"
     assert vector_store.searched_document_ids is None
 
-    assert len(llm.prompts) == 1
+    assert len(llm.requests) == 1
 
-    prompt = llm.prompts[0]
+    request = llm.requests[0]
 
-    assert "Каков срок действия договора?" in prompt
-    assert "The contract is valid for one year." in prompt
-    assert "[стр. 3]" in prompt
+    assert "Каков срок действия договора?" in request.prompt
+    assert "The contract is valid for one year." in request.prompt
+    assert "[стр. 3]" in request.prompt
+    assert "ID источника: S1" in request.prompt
+    assert request.prompt_version == "answer-v1"
 
 
 def test_rag_pipeline_forwards_selected_document_ids():
