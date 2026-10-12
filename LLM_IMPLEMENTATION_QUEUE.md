@@ -7,9 +7,9 @@
 - Ingestion and retrieval are separate. `DocumentPipeline` handles PDF
   extraction/OCR and indexing; `Retriever` embeds a query and searches Qdrant;
   `RAGPipeline` passes results through `ContextBuilder` and `AnswerGenerator`.
-- `LLMService` is an abstract interface with `generate(prompt: str) -> str`.
-  `OllamaLLMService` implements it over `httpx` and `/api/generate`, with a
-  single 120-second timeout and a test seam at `_post`.
+- `LLMService` uses typed `LLMRequest`/`LLMResponse` contracts and preserves
+  `generate(prompt: str) -> str` for compatibility. Ollama and OpenRouter
+  adapters use `httpx` with a test seam at `_post`.
 - `AnswerGenerator` owns a Russian-language prompt, page-citation instructions,
   and untrusted-source markers. It returns a fixed insufficient-information
   sentence without calling the LLM when the context is empty. It does not
@@ -26,9 +26,9 @@
   use Alembic; the sole existing revision is defensive/idempotent for legacy
   databases. Request-scoped database sessions and SQLAlchemy repositories are
   established patterns.
-- Settings use frozen `pydantic-settings` and `.env.example`. The configured
-  LLM is currently Ollama; there is no OpenRouter key, provider selection,
-  or model capability configuration.
+- Settings use frozen `pydantic-settings` and `.env.example`. OpenRouter is
+  the approved default provider; Ollama is available by explicit selection.
+  Model capabilities are conservative and explicit configuration values.
 - Tests use pytest, fakes, mocked HTTP seams, in-memory SQLite/Qdrant, and an
   opt-in/availability-guarded real-Ollama integration test. The default suite
   is expected to remain deterministic and network-free.
@@ -200,13 +200,12 @@ mode, context size, streaming, or token/cost metadata.
 ## Progress
 
 - Total tasks: 8
-- Completed: 2 (task 1 decisions and task 2 contracts recorded; existing capabilities are marked
-  complete in the inspection and are not counted as new work)
-- Current task: task 3
+- Completed: 3 (decisions recorded and tasks 2-3 implemented)
+- Current task: task 4
 - Blocked: none
-- Remaining: 5 (task 7 explicitly declined)
-- Latest test result: 143 passed, 3 deselected; Ruff and Black passed
-- Latest commit: `a2c4cab`
+- Remaining: 4 (task 7 explicitly declined)
+- Latest test result: 159 passed, 3 deselected; Ruff and Black passed
+- Latest commit: `53d3e2e`
 
 ## Tasks
 
@@ -263,13 +262,13 @@ mode, context size, streaming, or token/cost metadata.
   contract, errors have stable categories, and current Ollama-backed behavior
   remains covered.
 * Commit message: `feat(llm): define provider-neutral contracts`
-* Commit hash: recorded after commit
+* Commit hash: `53d3e2e`
 
 ### Task 3: Adding explicit LLM configuration and OpenRouter adapter
 
-* Status: `[ ]`
-* Goal: Support OpenRouter without changing the default provider or silently
-  switching paid services.
+* Status: `[x]`
+* Goal: Configure the approved default OpenRouter provider without silently
+  switching paid services or assuming model capabilities.
 * Review/requirement: Requirement 5 of `prompt.txt`; re-verify official
   OpenRouter documentation before implementation.
 * Dependencies: Tasks 1 and 2.
@@ -281,7 +280,7 @@ mode, context size, streaming, or token/cost metadata.
   capabilities, and connect/read timeouts. Implement the documented
   chat-completions request/response mapping, authentication header, request-ID
   and usage/cost extraction when present, and provider error classification.
-  Keep Ollama configured and selected by default. Do not log credentials or
+  Keep OpenRouter selected by default and Ollama available explicitly. Do not log credentials or
   request/response bodies. Add an opt-in live smoke test only; never require
   credentials for ordinary tests. Add no dependency unless an implementation
   gap proves one is necessary.
@@ -297,11 +296,11 @@ mode, context size, streaming, or token/cost metadata.
   `.\venv\Scripts\python.exe -m pytest tests\test_config.py tests\test_llm.py tests\test_dependencies.py`
   `.\venv\Scripts\python.exe -m ruff check .`
   `.\venv\Scripts\python.exe -m black --check .`
-* Definition of done: Ollama remains the default, OpenRouter works entirely
-  through mocked tests, missing configuration fails clearly, and no fallback
-  or secret leakage is possible.
+* Definition of done: OpenRouter remains the approved default, both providers
+  work through mocked tests, missing configuration fails clearly, and no
+  fallback or secret leakage is possible.
 * Commit message: `feat(llm): add configurable OpenRouter provider`
-* Commit hash: pending
+* Commit hash: recorded after commit
 
 ### Task 4: Versioning prompts and preparing source-aware context
 

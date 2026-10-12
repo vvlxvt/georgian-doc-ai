@@ -59,6 +59,18 @@ def validate_ollama(config: Settings) -> None:
         raise PreflightError(f"Ollama model '{config.ollama_model}' is not installed")
 
 
+def validate_llm_provider(config: Settings) -> None:
+    if config.llm_provider == "ollama":
+        validate_ollama(config)
+    elif config.llm_provider == "openrouter":
+        if not config.openrouter_api_key.strip():
+            raise PreflightError(
+                "OPENROUTER_API_KEY is required when LLM_PROVIDER is 'openrouter'"
+            )
+    else:
+        raise PreflightError(f"Unsupported LLM provider: {config.llm_provider!r}")
+
+
 def validate_tesseract(config: Settings) -> None:
     try:
         installed_languages = set(pytesseract.get_languages(config=""))
@@ -76,5 +88,5 @@ def validate_tesseract(config: Settings) -> None:
 def validate_runtime(config: Settings) -> None:
     validate_schema(config)
     validate_qdrant(config)
-    validate_ollama(config)
+    validate_llm_provider(config)
     validate_tesseract(config)

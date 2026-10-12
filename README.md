@@ -9,7 +9,7 @@ Source documents are Georgian, answers and prompt text are Russian, and all code
 Ingestion and query paths are separate:
 
 - **Ingestion**: `app/pipeline.py` reads a PDF (`app/pdf.py`), uses the native text layer when a page has enough text and falls back to Tesseract OCR (`app/ocr.py`), normalizes it (`app/text.py`), chunks it by characters (`app/chunking.py`), stores pages and chunks in SQLite (`app/models.py`, `app/repositories.py`), and indexes the chunks in Qdrant (`app/indexing.py`, `app/qdrant_store.py`).
-- **Query**: `app/rag.py` embeds the question (`app/embeddings.py`), searches Qdrant (`app/retrieval.py`), wraps the hits as untrusted source blocks (`app/context.py`), and asks Ollama for a Russian answer with `[стр. N]` citations (`app/answer.py`, `app/llm.py`).
+- **Query**: `app/rag.py` embeds the question (`app/embeddings.py`), searches Qdrant (`app/retrieval.py`), wraps the hits as untrusted source blocks (`app/context.py`), and asks the configured LLM provider for a Russian answer with `[стр. N]` citations (`app/answer.py`, `app/llm.py`). OpenRouter is selected by default; Ollama can be selected explicitly.
 
 External services sit behind abstract interfaces (`EmbeddingService`, `VectorStore`, `OCRProcessor`, `LLMService`) and are constructed once per process in `app/dependencies.py`.
 
@@ -29,7 +29,7 @@ ingestion and RAG services and preserves the CLI.
    remote Qdrant instance, set `QDRANT_URL` to its endpoint and set
    `QDRANT_API_KEY` if the instance requires authentication. Keep the API key
    in `.env` or another secret store; do not commit it.
-3. Start Qdrant and Ollama, install the configured Ollama model, and install Tesseract language data for `kat` and `eng`.
+3. Start Qdrant and configure the selected LLM provider. The default OpenRouter provider requires `OPENROUTER_API_KEY`; to use Ollama, set `LLM_PROVIDER=ollama`, start Ollama, and install the configured model. Install Tesseract language data for `kat` and `eng`.
 4. Apply migrations:
 
    ```powershell
@@ -52,9 +52,9 @@ Re-running `index` on the same file is cheap: pages whose content hash is unchan
 
 ## Web UI
 
-Install the project dependencies, apply migrations, and make sure the required
-Qdrant, Ollama, and Tesseract services are configured. Start the UI bound to
-loopback:
+Install the project dependencies, apply migrations, and make sure Qdrant,
+the selected LLM provider, and Tesseract are configured. Start the UI bound
+to loopback:
 
 ```powershell
 .\venv\Scripts\python.exe -m uvicorn app.web:app --host 127.0.0.1 --port 8000
@@ -94,8 +94,17 @@ All operational settings are environment-backed; see `.env.example` for the full
 | `QDRANT_COLLECTION` | `documents` | |
 | `EMBEDDING_MODEL` | `BAAI/bge-m3` | |
 | `EMBEDDING_SIZE` | `1024` | Must match the Qdrant collection |
+| `LLM_PROVIDER` | `openrouter` | `openrouter` or `ollama`; there is no provider fallback |
 | `OLLAMA_URL` | `http://localhost:11434` | |
 | `OLLAMA_MODEL` | `llama3.2:3b` | |
+| `OPENROUTER_URL` | `https://api.openrouter.ai` | Base URL; the adapter uses `/api/v1/chat/completions` |
+| `OPENROUTER_API_KEY` | *(empty)* | Required when `LLM_PROVIDER=openrouter`; keep it secret |
+| `OPENROUTER_MODEL` | `gpt-4o-mini` | Model identifier sent to OpenRouter |
+| `OPENROUTER_CONNECT_TIMEOUT` | `10.0` | Seconds |
+| `OPENROUTER_READ_TIMEOUT` | `120.0` | Seconds for read and write; pool timeout follows the connect timeout |
+| `OPENROUTER_SUPPORTS_STRUCTURED_OUTPUT` | `false` | Set true only when supported by the configured model |
+| `OPENROUTER_SUPPORTS_JSON_MODE` | `false` | Set true only when supported by the configured model |
+| `OPENROUTER_SUPPORTS_STREAMING` | `false` | Set true only when supported by the configured model |
 | `TESSERACT_LANGUAGES` | `kat+eng` | Languages joined with `+` |
 | `CHUNK_MAX_LENGTH` | `1000` | Characters, not tokens |
 | `CHUNK_OVERLAP` | `100` | Words of overlap between chunks |
@@ -149,4 +158,4 @@ Lint and format:
 ## Operational notes
 
 - SQLite and Qdrant are not updated atomically. Ingestion writes the new chunks and vectors first and only removes the previous chunk rows once indexing succeeds; on failure it rolls the session back and restores the previous vectors.
-- `main.py preflight` validates the schema, Qdrant, the Ollama model, and Tesseract language data, so a misconfigured deployment fails at startup with a readable message instead of part-way through indexing.
+- `main.py preflight` validates the schema, Qdrant, the selected LLM provider configuration, and Tesseract language data. For Ollama it checks the configured model; for OpenRouter it checks that the API key is configured without sending a live or potentially billable request.

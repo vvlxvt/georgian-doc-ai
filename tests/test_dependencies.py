@@ -91,6 +91,85 @@ def test_reset_application_services_creates_fresh_pipeline(monkeypatch):
     dependencies.reset_application_services()
 
 
+def test_get_llm_service_passes_openrouter_settings(monkeypatch):
+    from app.config import Settings
+    from app.llm import LLMCapabilities
+
+    constructor_args = {}
+
+    class FakeOpenRouterLLMService:
+        def __init__(self, **kwargs):
+            constructor_args.update(kwargs)
+
+    monkeypatch.setattr(
+        dependencies,
+        "settings",
+        Settings(
+            llm_provider="openrouter",
+            openrouter_url="https://openrouter.example",
+            openrouter_api_key="test-key",
+            openrouter_model="test/model",
+            openrouter_connect_timeout=4.0,
+            openrouter_read_timeout=30.0,
+            openrouter_supports_structured_output=True,
+            _env_file=None,
+        ),
+    )
+    monkeypatch.setattr(
+        dependencies,
+        "OpenRouterLLMService",
+        FakeOpenRouterLLMService,
+    )
+    dependencies.reset_application_services()
+
+    service = dependencies.get_llm_service()
+
+    assert isinstance(service, FakeOpenRouterLLMService)
+    assert constructor_args == {
+        "model": "test/model",
+        "base_url": "https://openrouter.example",
+        "api_key": "test-key",
+        "connect_timeout": 4.0,
+        "read_timeout": 30.0,
+        "capabilities": LLMCapabilities(supports_structured_output=True),
+    }
+    dependencies.reset_application_services()
+
+
+def test_get_llm_service_selects_ollama_when_explicitly_configured(monkeypatch):
+    from app.config import Settings
+
+    selected = []
+
+    class FakeOllamaLLMService:
+        def __init__(self, **kwargs):
+            selected.append(kwargs)
+
+    monkeypatch.setattr(
+        dependencies,
+        "settings",
+        Settings(
+            llm_provider="ollama",
+            ollama_url="http://ollama.example:11434",
+            ollama_model="test-model",
+            _env_file=None,
+        ),
+    )
+    monkeypatch.setattr(dependencies, "OllamaLLMService", FakeOllamaLLMService)
+    dependencies.reset_application_services()
+
+    service = dependencies.get_llm_service()
+
+    assert isinstance(service, FakeOllamaLLMService)
+    assert selected == [
+        {
+            "model": "test-model",
+            "base_url": "http://ollama.example:11434",
+        }
+    ]
+    dependencies.reset_application_services()
+
+
 def test_qdrant_client_uses_configured_remote_credentials(monkeypatch):
     from app.config import Settings
 

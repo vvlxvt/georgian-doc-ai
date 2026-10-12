@@ -330,26 +330,42 @@ class OpenRouterLLMService(LLMService):
         model: str = "gpt-4o-mini",
         base_url: str = "https://api.openrouter.ai",
         api_key: str | None = None,
-        timeout: float = 120.0,
+        connect_timeout: float = 10.0,
+        read_timeout: float = 120.0,
+        capabilities: LLMCapabilities | None = None,
     ):
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
-        self.timeout = timeout
-        self.capabilities = LLMCapabilities()
+        self.connect_timeout = connect_timeout
+        self.read_timeout = read_timeout
+        self.capabilities = capabilities or LLMCapabilities()
 
     def _post(self, payload: dict[str, Any]) -> httpx.Response:
         headers = {}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        timeout = httpx.Timeout(
+            connect=self.connect_timeout,
+            read=self.read_timeout,
+            write=self.read_timeout,
+            pool=self.connect_timeout,
+        )
         return httpx.post(
             f"{self.base_url}/api/v1/chat/completions",
             json=payload,
             headers=headers,
-            timeout=self.timeout,
+            timeout=timeout,
         )
 
     def call(self, request: LLMRequest) -> LLMResponse:
+        if not self.api_key or not self.api_key.strip():
+            raise LLMError(
+                LLMErrorCategory.AUTHENTICATION,
+                "OPENROUTER_API_KEY is required to use the OpenRouter provider.",
+                provider=self.provider,
+                model=self.model,
+            )
         payload = {
             "model": self.model,
             "messages": [{"role": "user", "content": request.prompt}],
@@ -378,7 +394,11 @@ class OpenRouterLLMService(LLMService):
                 model=self.model,
             )
 
-        request_id = data.get("id") or data.get("request_id")
+        request_id = (
+            data.get("id")
+            or data.get("request_id")
+            or getattr(response, "headers", {}).get("x-request-id")
+        )
         if not isinstance(request_id, str):
             request_id = None
         usage = data.get("usage")

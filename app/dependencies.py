@@ -8,7 +8,12 @@ from app.config import settings
 from app.context import ContextBuilder
 from app.embeddings import HuggingFaceEmbeddingService
 from app.indexing import ChunkIndexer
-from app.llm import LLMService, OllamaLLMService, OpenRouterLLMService
+from app.llm import (
+    LLMCapabilities,
+    LLMService,
+    OllamaLLMService,
+    OpenRouterLLMService,
+)
 from app.ocr import TesseractOCREngine
 from app.pipeline import DocumentPipeline
 from app.qdrant_store import QdrantVectorStore
@@ -52,14 +57,24 @@ def get_llm_service() -> LLMService:
             model=settings.openrouter_model,
             base_url=settings.openrouter_url,
             api_key=settings.openrouter_api_key or None,
-            timeout=getattr(settings, "openrouter_timeout", 120.0),
+            connect_timeout=settings.openrouter_connect_timeout,
+            read_timeout=settings.openrouter_read_timeout,
+            capabilities=LLMCapabilities(
+                supports_structured_output=(
+                    settings.openrouter_supports_structured_output
+                ),
+                supports_json_mode=settings.openrouter_supports_json_mode,
+                supports_streaming=settings.openrouter_supports_streaming,
+            ),
         )
 
-    # fallback to Ollama for backward compatibility
-    return OllamaLLMService(
-        model=settings.ollama_model,
-        base_url=settings.ollama_url,
-    )
+    if provider == "ollama":
+        return OllamaLLMService(
+            model=settings.ollama_model,
+            base_url=settings.ollama_url,
+        )
+
+    raise ValueError(f"Unsupported LLM provider: {settings.llm_provider!r}")
 
 
 @lru_cache(maxsize=1)

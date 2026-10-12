@@ -1,3 +1,6 @@
+from typing import Literal
+
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,13 +25,17 @@ class Settings(BaseSettings):
     ollama_url: str = "http://localhost:11434"
 
     # LLM provider configuration
-    llm_provider: str = "openrouter"  # one of: 'openrouter', 'ollama'
+    llm_provider: Literal["openrouter", "ollama"] = "openrouter"
 
     # OpenRouter (optional; used when llm_provider == 'openrouter')
     openrouter_url: str = "https://api.openrouter.ai"
     openrouter_api_key: str = ""
     openrouter_model: str = "gpt-4o-mini"  # default example model
-    openrouter_timeout: float = 120.0
+    openrouter_connect_timeout: float = Field(default=10.0, gt=0)
+    openrouter_read_timeout: float = Field(default=120.0, gt=0)
+    openrouter_supports_structured_output: bool = False
+    openrouter_supports_json_mode: bool = False
+    openrouter_supports_streaming: bool = False
 
     tesseract_languages: str = "kat+eng"
 

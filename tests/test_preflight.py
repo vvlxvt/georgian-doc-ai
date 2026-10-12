@@ -4,6 +4,7 @@ from app.config import Settings
 from app.preflight import (
     REQUIRED_TABLES,
     PreflightError,
+    validate_llm_provider,
     validate_ollama,
     validate_qdrant,
     validate_schema,
@@ -39,6 +40,37 @@ def test_validate_ollama_rejects_missing_model(monkeypatch):
 
     with pytest.raises(PreflightError, match="not installed"):
         validate_ollama(Settings(ollama_model="test-model", _env_file=None))
+
+
+def test_validate_llm_provider_checks_ollama_only_when_selected(monkeypatch):
+    validated = []
+    monkeypatch.setattr(
+        "app.preflight.validate_ollama",
+        lambda config: validated.append(config.ollama_model),
+    )
+
+    validate_llm_provider(Settings(llm_provider="ollama", _env_file=None))
+    assert validated == ["llama3.2:3b"]
+
+
+def test_validate_llm_provider_requires_openrouter_key_without_network(monkeypatch):
+    monkeypatch.setattr(
+        "app.preflight.validate_ollama",
+        lambda config: pytest.fail("Ollama must not be checked"),
+    )
+
+    with pytest.raises(PreflightError, match="OPENROUTER_API_KEY is required"):
+        validate_llm_provider(Settings(llm_provider="openrouter", _env_file=None))
+
+
+def test_validate_llm_provider_accepts_openrouter_key_without_live_request():
+    validate_llm_provider(
+        Settings(
+            llm_provider="openrouter",
+            openrouter_api_key="test-key",
+            _env_file=None,
+        )
+    )
 
 
 def test_validate_qdrant_wraps_connection_error(monkeypatch):
