@@ -44,6 +44,13 @@ class FakeVectorStore(VectorStore):
             if item["payload"].get("page_id") != page_id or vector_id in exclude_ids
         }
 
+    def delete_by_document(self, document_id):
+        self.items = {
+            vector_id: item
+            for vector_id, item in self.items.items()
+            if item["payload"].get("document_id") != document_id
+        }
+
 
 def create_pipeline(session, ocr_processor=None, chunk_indexer=None):
     if ocr_processor is None:

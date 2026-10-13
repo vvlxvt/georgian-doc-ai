@@ -1,7 +1,15 @@
 "use strict";
 
 document.querySelectorAll("form[data-pending-message]").forEach((form) => {
-  form.addEventListener("submit", () => {
+  form.addEventListener("submit", (event) => {
+    if (
+      form.dataset.confirmMessage &&
+      !window.confirm(form.dataset.confirmMessage)
+    ) {
+      event.preventDefault();
+      return;
+    }
+
     const pendingStatus = form.querySelector("[data-pending-status]");
     const submitButton = form.querySelector('button[type="submit"]');
 

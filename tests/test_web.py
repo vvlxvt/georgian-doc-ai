@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 
-from app.models import Base, Document, DocumentPage, PageStatus
+from app.models import Base, Document, DocumentChunk, DocumentPage, PageStatus
 from app.web import app, create_app
 from app.web_dependencies import get_session
 
@@ -110,6 +110,125 @@ def test_documents_page_renders_empty_state(web_session_factory):
     assert response.status_code == 200
     assert "Пока нет документов" in response.text
     assert "не проверяет наличие векторов в Qdrant" in response.text
+
+
+def test_documents_page_renders_delete_form(web_session_factory):
+    document_id = add_web_document(web_session_factory)
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.get("/documents")
+
+    assert response.status_code == 200
+    assert f"/documents/{document_id}/delete" in response.text
+    assert "Удалить документ" in response.text
+    assert "data-confirm-message=" in response.text
+
+
+def test_delete_document_removes_database_records_vectors_and_owned_original(
+    web_session_factory,
+    monkeypatch,
+    tmp_path,
+):
+    from app import dependencies, web_routes
+
+    pdf_bytes = b"%PDF-1.7 source"
+    file_hash = hashlib.sha256(pdf_bytes).hexdigest()
+    document_id = add_web_document(
+        web_session_factory,
+        filename="source.pdf",
+        file_hash=file_hash,
+    )
+    with web_session_factory() as session:
+        page = DocumentPage(
+            document_id=document_id,
+            page_number=1,
+            content_hash="b" * 64,
+            status=PageStatus.PARSED,
+            text="Indexed content",
+        )
+        session.add(page)
+        session.flush()
+        session.add(
+            DocumentChunk(
+                page_id=page.id,
+                page_number=1,
+                chunk_index=0,
+                text="Indexed chunk",
+            )
+        )
+        session.commit()
+
+    storage_directory = tmp_path / "documents"
+    storage_directory.mkdir()
+    stored_original = storage_directory / f"{file_hash}.pdf"
+    stored_original.write_bytes(pdf_bytes)
+    input_directory = tmp_path / "input"
+    input_directory.mkdir()
+    input_original = input_directory / "source.pdf"
+    input_original.write_bytes(pdf_bytes)
+    monkeypatch.setattr(web_routes, "ORIGINAL_DOCUMENT_DIRECTORY", storage_directory)
+    monkeypatch.setattr(web_routes, "INPUT_DOCUMENT_DIRECTORY", input_directory)
+
+    deleted_document_ids = []
+
+    class FakeVectorStore:
+        def delete_by_document(self, deleted_document_id):
+            deleted_document_ids.append(deleted_document_id)
+
+    monkeypatch.setattr(dependencies, "get_vector_store", FakeVectorStore)
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.post(
+            f"/documents/{document_id}/delete",
+            follow_redirects=False,
+        )
+        listing = client.get(response.headers["location"])
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/documents?deleted=1"
+    assert deleted_document_ids == [document_id]
+    assert not stored_original.exists()
+    assert input_original.exists()
+    assert "Документ и его данные удалены." in listing.text
+    with web_session_factory() as session:
+        assert session.get(Document, document_id) is None
+        assert session.query(DocumentPage).count() == 0
+        assert session.query(DocumentChunk).count() == 0
+
+
+def test_delete_document_keeps_database_records_when_vector_delete_fails(
+    web_session_factory,
+    monkeypatch,
+):
+    from app import dependencies
+
+    document_id = add_web_document(web_session_factory)
+
+    class FailingVectorStore:
+        def delete_by_document(self, deleted_document_id):
+            raise RuntimeError("Qdrant unavailable")
+
+    monkeypatch.setattr(dependencies, "get_vector_store", FailingVectorStore)
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.post(f"/documents/{document_id}/delete")
+
+    assert response.status_code == 503
+    assert "Запись в базе данных оставлена без изменений." in response.text
+    with web_session_factory() as session:
+        assert session.get(Document, document_id) is not None
+
+
+def test_delete_document_returns_not_found_for_unknown_id(web_session_factory):
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.post("/documents/missing/delete")
+
+    assert response.status_code == 404
 
 
 def test_documents_page_renders_database_data_escaped(web_session_factory):
@@ -664,6 +783,7 @@ def test_question_form_rejects_document_ids_not_in_database(
     [
         ("/ask", {"question": "Каков срок?"}),
         ("/upload", {}),
+        ("/documents/missing/delete", {}),
     ],
 )
 def test_state_changing_forms_reject_cross_origin_requests(path, data):

@@ -20,6 +20,18 @@
     </p>
   </section>
 
+  {% if error %}
+    <p class="alert-error" role="alert">{{ error }}</p>
+  {% elif deleted %}
+    <p class="alert-success" role="status">Документ и его данные удалены.</p>
+  {% endif %}
+  {% if cleanup_warning %}
+    <p class="alert-error" role="alert">
+      Документ удалён из базы и Qdrant, но сохранённый PDF не удалось удалить.
+      Проверьте журнал приложения.
+    </p>
+  {% endif %}
+
   {% if documents %}
     <p class="results-count" aria-live="polite">Документов: {{ total }}</p>
     <div class="document-list">
@@ -45,6 +57,17 @@
           {% else %}
             <p class="muted-text">Страницы ещё не зарегистрированы.</p>
           {% endif %}
+          <form
+            class="document-delete-form"
+            method="post"
+            action="{{ url_for('delete_document', document_id=entry.document.id) }}"
+            data-pending-message="Удаляем документ и его данные"
+            data-pending-label="Удаление..."
+            data-confirm-message="Удалить документ, все страницы, фрагменты и векторы? Это действие нельзя отменить."
+          >
+            <button class="button button-secondary document-delete-button" type="submit">Удалить документ</button>
+            <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
+          </form>
         </article>
       {% endfor %}
     </div>

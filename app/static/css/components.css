@@ -156,6 +156,15 @@ h2 {
   font-size: 0.9rem;
 }
 
+.document-delete-form {
+  margin-top: 0.75rem;
+}
+
+.document-delete-button {
+  min-height: 1.925rem;
+  padding-block: 0.25rem;
+}
+
 .status-list {
   display: flex;
   flex-wrap: wrap;

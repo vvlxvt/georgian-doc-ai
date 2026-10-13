@@ -290,3 +290,34 @@ def test_delete_by_page():
 
     assert len(results) == 1
     assert results[0]["id"] == third_id
+
+
+def test_delete_by_document_removes_only_matching_vectors():
+    store = create_store()
+    first_id = str(uuid4())
+    second_id = str(uuid4())
+    other_document_id = str(uuid4())
+    store.upsert(
+        vector_id=first_id,
+        vector=[1.0, 0.0, 0.0],
+        payload={"document_id": "doc-1", "text": "first"},
+    )
+    store.upsert(
+        vector_id=second_id,
+        vector=[0.0, 1.0, 0.0],
+        payload={"document_id": "doc-1", "text": "second"},
+    )
+    store.upsert(
+        vector_id=other_document_id,
+        vector=[0.0, 0.0, 1.0],
+        payload={"document_id": "doc-2", "text": "third"},
+    )
+
+    store.delete_by_document("doc-1")
+
+    results = store.search(
+        vector=[0.0, 0.0, 1.0],
+        limit=10,
+    )
+
+    assert [result["id"] for result in results] == [other_document_id]

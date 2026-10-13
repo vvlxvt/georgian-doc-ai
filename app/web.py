@@ -32,7 +32,12 @@ def create_app(
 
     @application.middleware("http")
     async def protect_form_posts(request, call_next):
-        if request.method == "POST" and request.url.path in {"/upload", "/ask"}:
+        is_document_delete = request.url.path.startswith(
+            "/documents/"
+        ) and request.url.path.endswith("/delete")
+        if request.method == "POST" and (
+            request.url.path in {"/upload", "/ask"} or is_document_delete
+        ):
             origin = request.headers.get("origin")
             if origin and not _is_same_origin(origin, str(request.base_url)):
                 return PlainTextResponse(

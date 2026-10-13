@@ -15,13 +15,13 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.llm import LLMError, LLMErrorCategory
-from app.models import Document, PageStatus
+from app.models import Document, DocumentPage, PageStatus
 from app.web_dependencies import get_session
 
 PAGE_SIZE = 20
@@ -90,6 +90,27 @@ def documents(
     request: Request,
     session: Session = Depends(get_session),
     page: int = Query(default=1, ge=1),
+    deleted: bool = Query(default=False),
+    cleanup_warning: bool = Query(default=False),
+):
+    return _render_documents(
+        request,
+        session,
+        page=page,
+        deleted=deleted,
+        cleanup_warning=cleanup_warning,
+    )
+
+
+def _render_documents(
+    request: Request,
+    session: Session,
+    page: int = 1,
+    *,
+    error: str | None = None,
+    deleted: bool = False,
+    cleanup_warning: bool = False,
+    status_code: int = 200,
 ):
     total = session.scalar(select(func.count()).select_from(Document)) or 0
     page_count = max(1, ceil(total / PAGE_SIZE))
@@ -132,7 +153,11 @@ def documents(
             "page": page,
             "page_count": page_count,
             "total": total,
+            "error": error,
+            "deleted": deleted,
+            "cleanup_warning": cleanup_warning,
         },
+        status_code=status_code,
     )
 
 
@@ -191,6 +216,86 @@ def document_original(
         filename=document.filename,
         content_disposition_type="inline",
     )
+
+
+@router.post("/documents/{document_id}/delete", name="delete_document")
+def delete_document(
+    document_id: str,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    document = session.scalar(
+        select(Document)
+        .options(selectinload(Document.pages).selectinload(DocumentPage.chunks))
+        .where(Document.id == document_id)
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    try:
+        from app.dependencies import get_vector_store
+
+        get_vector_store().delete_by_document(document.id)
+    except Exception:
+        logger.exception("Failed to delete document vectors")
+        return _render_documents(
+            request,
+            session,
+            error=(
+                "Не удалось удалить векторы документа. Запись в базе данных "
+                "оставлена без изменений."
+            ),
+            status_code=503,
+        )
+
+    document_hash = document.file_hash
+    stored_original = _stored_original_path(document)
+    session.delete(document)
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Failed to delete document database records")
+        return _render_documents(
+            request,
+            session,
+            error=(
+                "Векторы документа удалены, но запись в базе данных удалить "
+                "не удалось. Проверьте журнал приложения."
+            ),
+            status_code=503,
+        )
+
+    cleanup_warning = False
+    if stored_original is not None:
+        try:
+            if _file_sha256(stored_original) != document_hash:
+                logger.warning("Stored original PDF hash did not match document")
+                cleanup_warning = True
+            else:
+                stored_original.unlink()
+        except OSError:
+            logger.exception("Failed to remove stored original PDF")
+            cleanup_warning = True
+
+    query = "cleanup_warning=1" if cleanup_warning else "deleted=1"
+    return RedirectResponse(url=f"/documents?{query}", status_code=303)
+
+
+def _stored_original_path(document: Document) -> Path | None:
+    if len(document.file_hash) != 64 or any(
+        character not in "0123456789abcdef" for character in document.file_hash
+    ):
+        return None
+
+    original_path = ORIGINAL_DOCUMENT_DIRECTORY / f"{document.file_hash}.pdf"
+    if (
+        original_path.is_symlink()
+        or original_path.resolve().parent != ORIGINAL_DOCUMENT_DIRECTORY.resolve()
+        or not original_path.is_file()
+    ):
+        return None
+    return original_path
 
 
 @router.get("/upload", name="upload_form")

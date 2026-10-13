@@ -169,3 +169,16 @@ class QdrantVectorStore(VectorStore):
                 ),
             ),
         )
+
+    def delete_by_document(self, document_id: str) -> None:
+        self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="document_id",
+                        match=MatchValue(value=document_id),
+                    ),
+                ],
+            ),
+        )
