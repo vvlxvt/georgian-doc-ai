@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -139,11 +140,145 @@ def test_documents_page_renders_database_data_escaped(web_session_factory):
     assert "Ошибка OCR: 1" in response.text
 
 
+def test_documents_page_links_to_and_serves_original_pdf(
+    web_session_factory,
+    monkeypatch,
+    tmp_path,
+):
+    from app import web_routes
+
+    pdf_bytes = b"%PDF-1.7 original"
+    file_hash = hashlib.sha256(pdf_bytes).hexdigest()
+    document_id = add_web_document(
+        web_session_factory,
+        filename="contract.pdf",
+        file_hash=file_hash,
+    )
+    storage_directory = tmp_path / "documents"
+    storage_directory.mkdir()
+    (storage_directory / f"{file_hash}.pdf").write_bytes(pdf_bytes)
+    monkeypatch.setattr(
+        web_routes,
+        "ORIGINAL_DOCUMENT_DIRECTORY",
+        storage_directory,
+    )
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        listing = client.get("/documents")
+        original = client.get(f"/documents/{document_id}/original")
+
+    assert f'href="http://testserver/documents/{document_id}/original"' in listing.text
+    assert "contract.pdf</a>" in listing.text
+    assert original.status_code == 200
+    assert original.headers["content-type"] == "application/pdf"
+    assert original.headers["content-disposition"].startswith("inline;")
+    assert original.content == pdf_bytes
+
+
+def test_documents_page_links_to_matching_pdf_in_input_directory(
+    web_session_factory,
+    monkeypatch,
+    tmp_path,
+):
+    from app import web_routes
+
+    pdf_bytes = b"%PDF-1.7 indexed through CLI"
+    file_hash = hashlib.sha256(pdf_bytes).hexdigest()
+    document_id = add_web_document(
+        web_session_factory,
+        filename="cli-document.pdf",
+        file_hash=file_hash,
+    )
+    input_directory = tmp_path / "input"
+    input_directory.mkdir()
+    (input_directory / "cli-document.pdf").write_bytes(pdf_bytes)
+    monkeypatch.setattr(
+        web_routes,
+        "ORIGINAL_DOCUMENT_DIRECTORY",
+        tmp_path / "documents",
+    )
+    monkeypatch.setattr(web_routes, "INPUT_DOCUMENT_DIRECTORY", input_directory)
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        listing = client.get("/documents")
+        original = client.get(f"/documents/{document_id}/original")
+
+    assert f"/documents/{document_id}/original" in listing.text
+    assert "cli-document.pdf</a>" in listing.text
+    assert original.status_code == 200
+    assert original.content == pdf_bytes
+
+
+def test_original_route_rejects_input_pdf_with_mismatched_hash(
+    web_session_factory,
+    monkeypatch,
+    tmp_path,
+):
+    from app import web_routes
+
+    expected_bytes = b"%PDF-1.7 expected"
+    document_id = add_web_document(
+        web_session_factory,
+        filename="cli-document.pdf",
+        file_hash=hashlib.sha256(expected_bytes).hexdigest(),
+    )
+    input_directory = tmp_path / "input"
+    input_directory.mkdir()
+    (input_directory / "cli-document.pdf").write_bytes(b"%PDF-1.7 changed")
+    monkeypatch.setattr(
+        web_routes,
+        "ORIGINAL_DOCUMENT_DIRECTORY",
+        tmp_path / "documents",
+    )
+    monkeypatch.setattr(web_routes, "INPUT_DOCUMENT_DIRECTORY", input_directory)
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        original = client.get(f"/documents/{document_id}/original")
+
+    assert original.status_code == 404
+
+
+def test_documents_without_retained_original_have_no_link_and_return_404(
+    web_session_factory,
+    monkeypatch,
+    tmp_path,
+):
+    from app import web_routes
+
+    document_id = add_web_document(web_session_factory, filename="cli-document.pdf")
+    monkeypatch.setattr(
+        web_routes,
+        "ORIGINAL_DOCUMENT_DIRECTORY",
+        tmp_path / "documents",
+    )
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        listing = client.get("/documents")
+        original = client.get(f"/documents/{document_id}/original")
+
+    assert f'href="http://testserver/documents/{document_id}/original"' not in (
+        listing.text
+    )
+    assert original.status_code == 404
+
+
 def test_upload_indexes_valid_pdf_and_cleans_temporary_file(
     web_session_factory,
     monkeypatch,
+    tmp_path,
 ):
-    from app import dependencies
+    from app import dependencies, web_routes
+
+    storage_directory = tmp_path / "documents"
+    monkeypatch.setattr(
+        web_routes,
+        "ORIGINAL_DOCUMENT_DIRECTORY",
+        storage_directory,
+    )
 
     processed_paths = []
 
@@ -174,6 +309,9 @@ def test_upload_indexes_valid_pdf_and_cleans_temporary_file(
     assert "valid.pdf" in response.text
     assert processed_paths
     assert not Path(processed_paths[0]).exists()
+    file_hash = hashlib.sha256(b"%PDF-1.7 test").hexdigest()
+    assert (storage_directory / f"{file_hash}.pdf").read_bytes() == b"%PDF-1.7 test"
+    (storage_directory / f"{file_hash}.pdf").unlink()
 
 
 @pytest.mark.parametrize(

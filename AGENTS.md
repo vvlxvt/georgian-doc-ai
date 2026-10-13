@@ -115,6 +115,9 @@ identifiers and documentation in English, and never expose secrets in rendered
 HTML or static assets. The initial UI is local-only and must be run bound to
 `127.0.0.1`; do not expose it to a network without adding approved
 authentication and authorization.
+Uploaded originals are kept in `data/documents/` under content-hash filenames;
+the document list can also link to matching originals in `data/input/`.
+Verify a candidate original against the document's SHA-256 before serving it.
 
 **LLM/RAG.** Keep provider-specific HTTP formats inside the implementation of
 the existing `LLMService` abstraction; application/RAG logic must not depend on

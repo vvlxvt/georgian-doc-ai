@@ -1,9 +1,21 @@
+import hashlib
 import logging
+import shutil
 from math import ceil
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
+from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -22,6 +34,8 @@ PAGE_STATUS_LABELS = {
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 MAX_QUESTION_CHARS = 2000
+ORIGINAL_DOCUMENT_DIRECTORY = Path(__file__).resolve().parents[1] / "data" / "documents"
+INPUT_DOCUMENT_DIRECTORY = Path(__file__).resolve().parents[1] / "data" / "input"
 logger = logging.getLogger(__name__)
 router = APIRouter()
 TEMPLATE_DIRECTORY = Path(__file__).parent / "templates"
@@ -105,6 +119,7 @@ def documents(
             {
                 "document": document,
                 "page_count": len(document.pages),
+                "original_available": _original_document_path(document) is not None,
                 "statuses": statuses,
             }
         )
@@ -118,6 +133,63 @@ def documents(
             "page_count": page_count,
             "total": total,
         },
+    )
+
+
+def _original_document_path(document: Document) -> Path | None:
+    if len(document.file_hash) != 64 or any(
+        character not in "0123456789abcdef" for character in document.file_hash
+    ):
+        return None
+
+    candidates = [
+        (
+            ORIGINAL_DOCUMENT_DIRECTORY,
+            f"{document.file_hash}.pdf",
+        )
+    ]
+    filename = Path(document.filename)
+    if filename.name == document.filename and filename.suffix.lower() == ".pdf":
+        candidates.append((INPUT_DOCUMENT_DIRECTORY, document.filename))
+
+    for directory, filename in candidates:
+        storage_directory = directory.resolve()
+        original_path = directory / filename
+        if (
+            not original_path.is_symlink()
+            and original_path.resolve().parent == storage_directory
+            and original_path.is_file()
+        ):
+            return original_path
+    return None
+
+
+def _file_sha256(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as file:
+        while chunk := file.read(UPLOAD_CHUNK_BYTES):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+@router.get("/documents/{document_id}/original", name="document_original")
+def document_original(
+    document_id: str,
+    session: Session = Depends(get_session),
+):
+    document = session.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    original_path = _original_document_path(document)
+    if original_path is None or _file_sha256(original_path) != document.file_hash:
+        raise HTTPException(status_code=404, detail="Original PDF not found")
+
+    return FileResponse(
+        original_path,
+        media_type="application/pdf",
+        filename=document.filename,
+        content_disposition_type="inline",
     )
 
 
@@ -152,6 +224,7 @@ def upload_document(
                 temp_path = Path(temp_directory) / filename
                 total_bytes = 0
                 header = b""
+                file_hash = hashlib.sha256()
 
                 with temp_path.open("wb") as temp_file:
                     while chunk := file.file.read(UPLOAD_CHUNK_BYTES):
@@ -166,6 +239,7 @@ def upload_document(
                         if not header:
                             header = chunk[:5]
                         temp_file.write(chunk)
+                        file_hash.update(chunk)
 
                 if error is None and total_bytes == 0:
                     error = "Файл пуст. Выберите PDF с содержимым."
@@ -180,6 +254,17 @@ def upload_document(
                     document_id = create_document_pipeline(session).process(
                         str(temp_path)
                     )
+                    ORIGINAL_DOCUMENT_DIRECTORY.mkdir(parents=True, exist_ok=True)
+                    original_path = (
+                        ORIGINAL_DOCUMENT_DIRECTORY / f"{file_hash.hexdigest()}.pdf"
+                    )
+                    with TemporaryDirectory(
+                        prefix="georgian-original-",
+                        dir=ORIGINAL_DOCUMENT_DIRECTORY,
+                    ) as staging_directory:
+                        staged_path = Path(staging_directory) / "original.pdf"
+                        shutil.copyfile(temp_path, staged_path)
+                        staged_path.replace(original_path)
         except Exception:
             logger.exception("PDF upload and indexing failed")
             error = (

@@ -221,3 +221,6 @@ __marimo__/
 
 # Local pytest base temporary directory
 .tmp/
+
+# Uploaded original documents are local user data
+data/documents/

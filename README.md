@@ -69,7 +69,9 @@ The UI provides:
 
 - `/` — overview.
 - `/documents` — read-only records stored in SQLite. This page does not verify
-  whether corresponding vectors are present in Qdrant.
+  whether corresponding vectors are present in Qdrant. The filename links to
+  the original PDF when available in `data/documents/` or as a matching file
+  in `data/input/`.
 - `/upload` — PDF upload and indexing through the existing document pipeline.
   Files must have a `.pdf` extension and PDF signature; maximum size is 50 MiB.
 - `/ask` — submit a question to the existing RAG pipeline and display its
@@ -77,10 +79,15 @@ The UI provides:
   documents selected, the search includes all documents.
 - `/health` — web-process liveness only; it does not replace `main.py preflight`.
 
-Uploaded files are streamed to a temporary file, removed after processing, and
-never use the submitted filename as a directory path. Question history and
-document deletion are not provided. The answer page displays the answer string
-from RAG and does not independently reconstruct source references.
+Uploaded files are streamed to a temporary file, indexed, and then stored as
+`data/documents/<sha256>.pdf`; the submitted filename is never used as a
+directory path. These stored originals are served inline from the local-only
+`/documents` page. Existing CLI-indexed documents can also link to a matching
+PDF in `data/input/`; the file's SHA-256 is verified before it is served.
+Documents indexed from elsewhere do not retain their source path and need to
+be uploaded through the UI to make the original available. Question history
+and document deletion are not provided. The answer page displays the answer
+string from RAG and does not independently reconstruct source references.
 Answers use ordinary Russian text with `[стр. N]` page citations. The
 application checks that cited page numbers occur in the retrieved results and
 that each detected sentence has a citation. This membership check does not

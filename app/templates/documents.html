@@ -26,7 +26,13 @@
       {% for entry in documents %}
         <article class="document-card">
           <div class="document-card-heading">
-            <h2>{{ entry.document.filename }}</h2>
+            <h2>
+              {% if entry.original_available %}
+                <a href="{{ url_for('document_original', document_id=entry.document.id) }}">{{ entry.document.filename }}</a>
+              {% else %}
+                {{ entry.document.filename }}
+              {% endif %}
+            </h2>
             <span class="document-date">{{ entry.document.created_at.strftime("%d.%m.%Y") }}</span>
           </div>
           <p class="document-page-count">Страниц: {{ entry.page_count }}</p>
