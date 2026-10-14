@@ -12,11 +12,11 @@
 
 {% block content %}
   <section class="page-heading" aria-labelledby="page-title">
-    <p class="eyebrow">Индексация</p>
+    <p class="eyebrow">Пополнить библиотеку</p>
     <h1 id="page-title">Загрузить документ</h1>
     <p class="page-description">
-      Добавьте PDF, чтобы извлечь текст и подготовить его к поиску.
-      Максимальный размер файла — {{ max_upload_mib }} МиБ.
+      Добавьте PDF, чтобы извлечь текст и подготовить его к поиску. Поддерживаются
+      файлы размером до {{ max_upload_mib }} МиБ.
     </p>
   </section>
 
@@ -32,20 +32,46 @@
     </div>
   {% endif %}
 
-  <form
-    class="form-card"
-    action="{{ url_for('upload_document') }}"
-    method="post"
-    enctype="multipart/form-data"
-    data-pending-message="Файл загружается и индексируется. Это может занять некоторое время."
-    data-pending-label="Идёт индексация..."
-  >
-    <div class="form-field">
-      <label for="pdf-file">PDF-файл</label>
-      <input id="pdf-file" name="file" type="file" accept="application/pdf,.pdf" required aria-describedby="file-help">
-      <p class="field-help" id="file-help">Поддерживаются PDF-файлы размером до {{ max_upload_mib }} МиБ.</p>
-    </div>
-    <button class="button button-primary" type="submit">Загрузить и проиндексировать</button>
-    <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
-  </form>
+  <div class="upload-layout">
+    <form
+      class="form-card upload-card"
+      action="{{ url_for('upload_document') }}"
+      method="post"
+      enctype="multipart/form-data"
+      data-pending-message="Файл загружается и индексируется. Это может занять некоторое время."
+      data-pending-label="Идёт индексация..."
+    >
+      <div class="upload-card-heading">
+        <span class="upload-card-icon" aria-hidden="true">↑</span>
+        <div>
+          <h2>Выберите файл</h2>
+          <p>Загрузите PDF с грузинским документом</p>
+        </div>
+      </div>
+      <div class="form-field">
+        <label for="pdf-file">PDF-файл</label>
+        <input id="pdf-file" name="file" type="file" accept="application/pdf,.pdf" required aria-describedby="file-help">
+        <p class="field-help" id="file-help">Только формат PDF · до {{ max_upload_mib }} МиБ</p>
+      </div>
+      <div class="upload-actions">
+        <button class="button button-primary" type="submit">Загрузить и проиндексировать <span aria-hidden="true">→</span></button>
+        <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
+      </div>
+      <div class="upload-security-note">
+        <span aria-hidden="true">✓</span>
+        <p>Имя файла используется только для отображения и не становится путём хранения.</p>
+      </div>
+    </form>
+
+    <aside class="upload-aside" aria-labelledby="upload-steps-title">
+      <p class="eyebrow">После загрузки</p>
+      <h2 id="upload-steps-title">Что произойдёт с документом</h2>
+      <ol class="upload-steps">
+        <li><span>01</span><p>Приложение проверит PDF и извлечёт текст страниц.</p></li>
+        <li><span>02</span><p>Если текстового слоя недостаточно, будет использовано распознавание OCR.</p></li>
+        <li><span>03</span><p>Документ станет доступен в библиотеке и для поиска по вопросам.</p></li>
+      </ol>
+      <a class="text-link" href="{{ url_for('documents') }}">Перейти в библиотеку <span aria-hidden="true">→</span></a>
+    </aside>
+  </div>
 {% endblock %}

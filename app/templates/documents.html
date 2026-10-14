@@ -11,13 +11,16 @@
 {% endblock %}
 
 {% block content %}
-  <section class="page-heading" aria-labelledby="page-title">
-    <p class="eyebrow">Библиотека</p>
-    <h1 id="page-title">Документы</h1>
-    <p class="page-description">
-      Здесь показаны документы, зарегистрированные в локальной базе приложения.
-      Список сам по себе не проверяет наличие векторов в Qdrant.
-    </p>
+  <section class="page-heading page-heading-row" aria-labelledby="page-title">
+    <div>
+      <p class="eyebrow">Ваша база знаний</p>
+      <h1 id="page-title">Документы</h1>
+      <p class="page-description">
+        Здесь показаны документы, зарегистрированные в локальной базе приложения.
+        Список сам по себе не проверяет наличие векторов в Qdrant.
+      </p>
+    </div>
+    <a class="button button-primary" href="{{ url_for('upload_form') }}"><span aria-hidden="true">＋</span> Добавить PDF</a>
   </section>
 
   {% if error %}
@@ -33,30 +36,38 @@
   {% endif %}
 
   {% if documents %}
-    <p class="results-count" aria-live="polite">Документов: {{ total }}</p>
+    <div class="library-toolbar">
+      <p class="results-count" aria-live="polite">Документы в библиотеке: <strong>{{ total }}</strong></p>
+      <span class="library-sort-label">Сначала новые</span>
+    </div>
     <div class="document-list">
       {% for entry in documents %}
         <article class="document-card">
-          <div class="document-card-heading">
-            <h2>
-              {% if entry.original_available %}
-                <a href="{{ url_for('document_original', document_id=entry.document.id) }}">{{ entry.document.filename }}</a>
+          <div class="document-file-mark" aria-hidden="true">PDF</div>
+          <div class="document-card-content">
+            <div class="document-card-heading">
+              <h2>
+                {% if entry.original_available %}
+                  <a href="{{ url_for('document_original', document_id=entry.document.id) }}">{{ entry.document.filename }}</a>
+                {% else %}
+                  {{ entry.document.filename }}
+                {% endif %}
+              </h2>
+              <span class="document-date">Добавлен {{ entry.document.created_at.strftime("%d.%m.%Y") }}</span>
+            </div>
+            <div class="document-metadata">
+              <span class="document-page-count"><span aria-hidden="true">▤</span> {{ entry.page_count }} стр.</span>
+              {% if entry.statuses %}
+                <ul class="status-list" aria-label="Статусы обработки страниц">
+                  {% for status in entry.statuses %}
+                    <li><span class="status-badge">{{ status.label }}: {{ status.count }}</span></li>
+                  {% endfor %}
+                </ul>
               {% else %}
-                {{ entry.document.filename }}
+                <span class="muted-text">Страницы ещё не зарегистрированы.</span>
               {% endif %}
-            </h2>
-            <span class="document-date">{{ entry.document.created_at.strftime("%d.%m.%Y") }}</span>
+            </div>
           </div>
-          <p class="document-page-count">Страниц: {{ entry.page_count }}</p>
-          {% if entry.statuses %}
-            <ul class="status-list" aria-label="Статусы обработки страниц">
-              {% for status in entry.statuses %}
-                <li><span class="status-badge">{{ status.label }}: {{ status.count }}</span></li>
-              {% endfor %}
-            </ul>
-          {% else %}
-            <p class="muted-text">Страницы ещё не зарегистрированы.</p>
-          {% endif %}
           <form
             class="document-delete-form"
             method="post"
@@ -65,7 +76,7 @@
             data-pending-label="Удаление..."
             data-confirm-message="Удалить документ, все страницы, фрагменты и векторы? Это действие нельзя отменить."
           >
-            <button class="button button-secondary document-delete-button" type="submit">Удалить документ</button>
+            <button class="button button-danger document-delete-button" type="submit">Удалить</button>
             <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
           </form>
         </article>
@@ -85,9 +96,15 @@
     {% endif %}
   {% else %}
     <section class="empty-state" aria-labelledby="empty-title">
+      <span class="empty-state-icon" aria-hidden="true">▤</span>
+      <p class="eyebrow">Библиотека пока пуста</p>
       <h2 id="empty-title">Пока нет документов</h2>
-      <p>Проиндексируйте PDF через CLI, чтобы он появился в этом списке.</p>
-      <code>.\venv\Scripts\python.exe main.py index "путь\к\файлу.pdf"</code>
+      <p>Добавьте первый PDF, чтобы подготовить его к поиску и вопросам.</p>
+      <a class="button button-primary" href="{{ url_for('upload_form') }}">Загрузить документ</a>
+      <details class="cli-hint">
+        <summary>Или добавьте документ через CLI</summary>
+        <code>.\venv\Scripts\python.exe main.py index "путь\к\файлу.pdf"</code>
+      </details>
     </section>
   {% endif %}
 {% endblock %}
