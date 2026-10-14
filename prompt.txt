@@ -1,0 +1,569 @@
+# Task: Plan an extensible, fault-tolerant LLM processing pipeline for georgian-doc-ai
+
+## 1. Objective
+
+Analyze the existing `georgian-doc-ai` repository and create a detailed, executable implementation queue for processing search and retrieval results with an LLM provider such as OpenRouter.
+
+The goal is to evolve the existing application incrementally without breaking document ingestion, native PDF text extraction, OCR, SQLite persistence, page-level processing statuses, document hashes, or the existing Qdrant/RAG architecture.
+
+The implementation must provide a clear separation between:
+
+1. Document ingestion and OCR.
+2. Document storage and indexing.
+3. Search and retrieval.
+4. Context preparation.
+5. LLM provider integration.
+6. Prompt management.
+7. LLM response parsing and validation.
+8. Quality and grounding checks.
+9. Result persistence.
+10. Error handling, retries, observability, and user feedback.
+
+These are conceptual responsibilities, not instructions to create ten separate services. Inspect the repository and choose an appropriate level of abstraction.
+
+Do not implement the pipeline during the initial planning phase.
+
+Your first deliverable is `LLM_IMPLEMENTATION_QUEUE.md` in the repository root.
+
+Wait for my approval before modifying application source code.
+
+## 2. Repository inspection
+
+Before creating the queue, inspect the actual project.
+
+Review:
+
+* Application entry point and FastAPI routers.
+* Existing document ingestion and OCR pipeline.
+* SQLite schema, migrations, repositories, and transaction handling.
+* Document, page, chunk, embedding, and processing status models.
+* Qdrant collections, vector dimensions, payload schemas, and search implementation.
+* Existing embedding abstractions and provider configuration.
+* Current RAG components, if present.
+* Existing AI/LLM integrations, prompts, and response schemas.
+* Background processing and task execution mechanisms, if present.
+* Logging, configuration, exception handling, and dependency injection.
+* Tests, fixtures, CI configuration, formatter, and linter.
+* Existing environment variable conventions and `.env.example`.
+* Git status, current branch, recent commit conventions, and uncommitted user changes.
+* Existing project documentation and architecture decisions.
+
+Use the real repository state as the source of truth.
+
+Do not invent existing modules, endpoints, schemas, or capabilities.
+
+Identify which components can be reused and which capabilities are missing.
+
+Do not expose secret values while inspecting configuration.
+
+## 3. Define the target processing flow
+
+Propose an architecture for the following conceptual flow, adapting it to the existing code:
+
+Search query
+-> retrieval from existing search/indexing components
+-> result normalization
+-> relevance filtering and context preparation
+-> prompt construction
+-> LLM provider abstraction
+-> OpenRouter adapter
+-> structured response parsing
+-> schema and grounding validation
+-> retry or fallback when appropriate
+-> result persistence
+-> response returned to the caller
+
+The implementation must distinguish between:
+
+* Search/retrieval failure.
+* Empty search results.
+* Insufficient or irrelevant context.
+* LLM provider failure.
+* Authentication or configuration failure.
+* Rate limiting.
+* Quota or credit exhaustion.
+* Network timeout.
+* Provider overload or server errors.
+* Invalid or truncated model output.
+* Schema validation failure.
+* Unsupported or malformed citations.
+* An answer that is not sufficiently supported by retrieved evidence.
+* Persistence failure.
+
+Do not treat these conditions as equivalent.
+
+The system must not fabricate an answer when retrieval provides no useful evidence.
+
+## 4. Extensible architecture
+
+Plan an implementation that separates provider-specific behavior from application business logic.
+
+Consider appropriate interfaces and components such as:
+
+* `LLMProvider`
+* `OpenRouterProvider`
+* `LLMRequest`
+* `LLMResponse`
+* `LLMUsage`
+* `LLMError`
+* `PromptTemplate` or a prompt repository
+* `ContextBuilder`
+* `ResponseParser`
+* `ResponseValidator`
+* `GroundingValidator`
+* `LLMService` or an application-level orchestrator
+
+These are candidate names, not mandatory class names. Reuse existing abstractions when possible.
+
+Requirements:
+
+1. Business logic must not depend directly on OpenRouter-specific request or response formats.
+2. Provider selection must be configurable.
+3. Model identifiers must be configurable rather than scattered throughout the code.
+4. API credentials must be provided through environment-based configuration.
+5. Adding another compatible provider should require a focused adapter and tests rather than rewriting the pipeline.
+6. Provider-specific capabilities must be represented explicitly when they differ.
+7. Do not assume every model supports structured outputs, JSON mode, streaming, or the same token limits.
+8. Avoid premature abstraction and unnecessary factories, registries, and base classes.
+9. Keep dependencies explicit and follow existing dependency-injection conventions.
+10. Define stable application-level request, response, and error contracts.
+
+The queue must specify which interfaces are introduced, their responsibilities, and the tests that enforce their contracts.
+
+## 5. OpenRouter integration
+
+Plan a minimal but robust integration with the official OpenRouter API.
+
+Verify the current API documentation before implementation.
+
+The plan should cover:
+
+* Configurable base URL.
+* API key management through environment variables.
+* Configurable model identifier.
+* Connect and read timeouts.
+* Request and response schemas.
+* HTTP status and provider error mapping.
+* Rate-limit handling.
+* Token usage and cost metadata when available.
+* Provider request identifiers when available.
+* Model capability differences.
+* Safe logging and diagnostics.
+* Mocked tests that do not require real credentials.
+* Optional live smoke tests that run only when explicitly enabled and credentials are available.
+
+Do not hardcode secrets or rely on a live OpenRouter account for ordinary tests.
+
+Do not silently switch models, providers, or paid services.
+
+Any fallback to another provider or model must be explicitly configured, observable, and covered by tests.
+
+Do not assume a provider error always means that retrying is safe.
+
+## 6. Fault tolerance and retry policy
+
+Create a clear error taxonomy and a retry policy.
+
+The implementation queue must distinguish between retryable and non-retryable errors.
+
+Consider:
+
+* Connection failures.
+* Request timeouts.
+* HTTP 429 rate limiting.
+* Temporary HTTP 5xx errors.
+* Invalid API credentials.
+* Insufficient account credits.
+* Invalid request payloads.
+* Unsupported model capabilities.
+* Context-length errors.
+* Invalid model output.
+* Validation errors.
+* Database persistence errors.
+
+Requirements:
+
+1. Use bounded retries.
+2. Use exponential backoff with jitter where appropriate.
+3. Respect `Retry-After` when available and valid.
+4. Configure maximum attempts and total processing time.
+5. Do not retry authentication failures or invalid requests without a meaningful configuration or request change.
+6. Do not create infinite retry loops.
+7. Avoid nested retry loops across provider, service, and background-worker layers.
+8. Do not retry non-idempotent operations blindly.
+9. Record retry attempts and the final outcome.
+10. Distinguish temporary failures from permanent failures.
+11. Make retry decisions deterministic and unit-testable where practical.
+
+For ambiguous network failures after a request was sent, account for the possibility that the provider processed the request even if the client did not receive the response.
+
+Document the possibility of duplicate provider charges and define the safest practical behavior.
+
+## 7. Failure feedback and recovery
+
+Every failure must produce an actionable diagnostic outcome.
+
+For each failure class, define:
+
+* Internal error type.
+* Safe user-facing message.
+* Structured log fields.
+* Whether the operation can be retried.
+* Whether manual intervention is required.
+* Whether the failure is terminal.
+* How the processing status is updated.
+* Whether partial results can be retained safely.
+
+Use structured logging where supported by the existing project.
+
+Include a correlation ID or processing/job ID when available.
+
+Record provider, model, attempt count, duration, error category, and request ID when available.
+
+Never log API keys, authorization headers, full sensitive document content, or raw prompts and responses by default.
+
+Do not expose stack traces, internal paths, provider credentials, or raw exception details through public API responses.
+
+If a background processing mechanism already exists, integrate with it. Do not introduce a new task queue solely for convenience without assessing the current architecture.
+
+If no background processing exists, evaluate whether the expected processing duration justifies synchronous requests, FastAPI background tasks, or a durable job mechanism. Explain the trade-offs and request approval before adding a major infrastructure dependency.
+
+If a job system is introduced, define:
+
+* Persistent job identity.
+* Explicit lifecycle states.
+* Retry and terminal-failure states.
+* Progress reporting.
+* Safe duplicate-submission behavior.
+* Recovery behavior after application restart.
+* How users can inspect and retry failed jobs.
+* How stuck jobs are detected and recovered.
+
+Do not claim that an in-process background task provides durable execution across process crashes.
+
+## 8. Result quality and grounding
+
+The pipeline must separate a syntactically valid answer from a well-supported answer.
+
+Plan validation for:
+
+* Response schema correctness.
+* Required fields.
+* Empty or malformed answers.
+* Citation structure.
+* Citation references to actual retrieved documents or chunks.
+* Evidence coverage for claims when feasible.
+* Unsupported claims.
+* Insufficient context.
+* Contradictions or conflicting source information.
+* Model refusal or inability to answer.
+
+Where the existing retrieval architecture supports citations, require the LLM to reference source identifiers supplied by the application.
+
+Validate citation identifiers against the actual retrieval results. Never trust document IDs or citation URLs invented by the model.
+
+Preserve source metadata such as document ID, page number, chunk ID, and available text offsets.
+
+Do not promise that a basic validator can prove every factual claim. Explicitly document the limits of automated grounding checks.
+
+When evidence is insufficient, return a clear insufficient-evidence result rather than manufacturing a confident answer.
+
+Treat retrieved document text as untrusted input. It may contain prompt injection or instructions intended to manipulate the model.
+
+Plan for context separation, explicit instructions to treat retrieved text as evidence rather than instructions, and validation of model outputs.
+
+## 9. Prompt management
+
+Inspect existing prompt storage and versioning before proposing a new system.
+
+If prompt management already exists, extend it rather than creating a competing mechanism.
+
+Define how prompts are:
+
+* Stored.
+* Versioned.
+* Selected for a task.
+* Rendered with validated input variables.
+* Tested with representative examples.
+* Changed without altering unrelated pipeline code.
+* Associated with model and processing metadata.
+
+Keep system instructions separate from retrieved document content.
+
+Do not interpolate untrusted document text into privileged system instructions.
+
+Avoid storing sensitive raw content in prompt logs.
+
+Prompt changes that affect output contracts must have corresponding schema and regression tests.
+
+## 10. Persistence and idempotency
+
+Inspect the current database and migration strategy before proposing changes.
+
+Determine which LLM artifacts should be persisted, such as:
+
+* Processing job or run ID.
+* Input query or a safe representation of it.
+* Retrieved source identifiers.
+* Prompt version.
+* Provider and model.
+* Processing status.
+* Structured result.
+* Validated citations.
+* Error category and safe diagnostic details.
+* Token usage and cost metadata when available.
+* Created and updated timestamps.
+
+Do not store every raw prompt and model response by default.
+
+Define retention and data-minimization rules appropriate to the existing application.
+
+Requirements:
+
+1. Use migrations for schema changes.
+2. Follow existing repository and transaction patterns.
+3. Prevent duplicate records when a job is retried.
+4. Define which operations are idempotent.
+5. Preserve existing document and page records.
+6. Handle partial failure between LLM execution and database persistence.
+7. Never mark a job successful before its required result is durably persisted.
+8. Test transaction rollback and persistence failure behavior.
+
+Do not introduce a second source of truth for document content.
+
+## 11. API and user-facing contracts
+
+Inspect existing FastAPI endpoints before proposing new ones.
+
+If a new API or UI workflow is necessary, define the contract before implementation.
+
+For each endpoint specify:
+
+* Method and path.
+* Request schema.
+* Response schema.
+* Validation rules.
+* Error responses.
+* Authentication and authorization requirements.
+* Timeout behavior.
+* Processing status behavior.
+* Retry behavior.
+* Relevant tests.
+
+Do not break existing API response formats without explicit approval.
+
+Prefer a consistent response contract and stable error codes while preserving existing conventions.
+
+If processing is asynchronous, define separate submission, status, result, and retry operations only where justified by the existing architecture.
+
+## 12. Testing strategy
+
+Every implementation task must define and execute its own verification.
+
+Plan tests for:
+
+### Unit tests
+
+* Provider interface contracts.
+* OpenRouter request serialization.
+* Provider response parsing.
+* Error classification.
+* Retry decisions and backoff.
+* Prompt rendering.
+* Context preparation.
+* Output schema validation.
+* Citation validation.
+* Insufficient-evidence handling.
+* Idempotency and state transitions.
+
+### Integration tests
+
+* LLM service with a mocked provider.
+* Existing retrieval components feeding the LLM pipeline.
+* Persistence of successful results.
+* Persistence of terminal failures.
+* Retry behavior.
+* Database rollback and recovery.
+* Existing ingestion, OCR, and indexing regressions.
+
+### API tests
+
+* Valid requests.
+* Invalid requests.
+* Empty retrieval results.
+* Provider timeouts and errors.
+* Rate limiting.
+* Invalid model output.
+* Unauthorized access where applicable.
+* Job status and retry behavior where applicable.
+
+### External smoke tests
+
+Only run real OpenRouter tests when explicitly enabled through configuration and credentials are available.
+
+Keep ordinary tests deterministic, inexpensive, and independent of live external services.
+
+Use the project's existing pytest configuration and fixtures. Do not weaken existing tests.
+
+## 13. Git commit policy
+
+Every completed implementation task must have its own meaningful Git commit.
+
+Before planning commits:
+
+1. Inspect the current branch.
+2. Run `git status`.
+3. Identify pre-existing user changes.
+4. Never stage or commit unrelated files.
+5. Never discard, reset, amend, or rewrite existing user work.
+
+For each implementation task:
+
+1. Mark it `[~]` in `LLM_IMPLEMENTATION_QUEUE.md`.
+2. Implement the task.
+3. Add or update tests.
+4. Run the relevant tests.
+5. Run the applicable formatter and linter.
+6. Review `git diff` and `git diff --check`.
+7. Confirm only intended files are staged.
+8. Update the queue with verification results.
+9. Stage only the files belonging to the completed task.
+10. Create a separate commit with a descriptive message.
+11. Record the commit hash in the queue.
+12. Mark the task `[x]` only after successful verification and commit creation.
+
+Use conventional commit messages when compatible with existing project conventions, for example:
+
+* `feat(llm): add provider contracts`
+* `feat(llm): integrate OpenRouter adapter`
+* `test(llm): cover retry and error handling`
+* `feat(rag): validate generated citations`
+
+Do not force conventional commits if the repository uses another established convention.
+
+If tests fail, do not commit the task as completed.
+
+If a task is blocked, do not create a misleading success commit. Report the blocker and wait for a decision.
+
+If Git identity, repository state, hooks, or permissions prevent a commit, report the exact problem. Do not bypass hooks or modify Git configuration without approval.
+
+Do not automatically push or deploy.
+
+## 14. Implementation queue format
+
+Create `LLM_IMPLEMENTATION_QUEUE.md` with:
+
+# LLM Implementation Queue
+
+## Project inspection
+
+* Existing architecture
+* Components to reuse
+* Missing capabilities
+* Risks and constraints
+* Relevant documentation references
+
+## Architecture proposal
+
+* Proposed component boundaries
+* Data flow
+* Error flow
+* Persistence strategy
+* Provider extension strategy
+* Key design decisions and alternatives
+
+## Progress
+
+* Total tasks
+* Completed tasks
+* Current task
+* Blocked tasks
+* Remaining tasks
+* Latest test result
+* Latest commit
+
+## Tasks
+
+For each task:
+
+### Task N: Title
+
+* Status: `[ ]`
+* Goal:
+* Review/requirement:
+* Dependencies:
+* Files to inspect:
+* Expected changes:
+* Public contracts affected:
+* Failure scenarios:
+* Tests to add/update:
+* Verification commands:
+* Definition of done:
+* Commit message:
+* Commit hash: pending
+
+Include the tasks needed for implementation, documentation, migration, testing, and final verification.
+
+Order tasks by dependency rather than convenience.
+
+Avoid oversized tasks that combine unrelated changes.
+
+Avoid tasks so small that they create unnecessary abstraction or commit noise.
+
+## 15. Required implementation phases
+
+Use these as planning guidance, not as a rigid requirement to create a separate module for every item.
+
+Consider a sequence covering:
+
+1. Repository inspection and architecture decisions.
+2. Baseline test run and Git safety checks.
+3. Application-level contracts and error taxonomy.
+4. Configuration and secret handling.
+5. Provider abstraction and deterministic mock implementation.
+6. OpenRouter adapter.
+7. Prompt management and versioning.
+8. Context preparation and retrieval integration.
+9. Response parsing and schema validation.
+10. Citation and grounding validation.
+11. Retry policy and failure recovery.
+12. Persistence, migrations, and idempotency.
+13. FastAPI integration and user-facing status reporting.
+14. Observability and cost/usage tracking.
+15. Unit, integration, API, and regression tests.
+16. Documentation and operational guidance.
+17. Final end-to-end verification and final review.
+
+Merge or split phases when repository evidence justifies it.
+
+Do not create unnecessary modules, dependencies, or infrastructure to match this example exactly.
+
+## 16. Final planning constraints
+
+During the initial planning phase:
+
+* Do not modify application source code.
+* Do not add dependencies.
+* Do not change database schemas.
+* Do not make Git commits.
+* Do not call OpenRouter.
+* Do not use real credentials.
+* Do not start background jobs or external services.
+
+You may create or update `LLM_IMPLEMENTATION_QUEUE.md` after inspecting the project and Git state.
+
+If the repository lacks sufficient information to decide an architectural detail, document the uncertainty and ask a specific question instead of inventing an answer.
+
+At the end of the planning phase, show me:
+
+1. The proposed architecture.
+2. The complete task queue.
+3. Important design decisions and alternatives.
+4. Failure scenarios and recovery strategy.
+5. Proposed database changes, if any.
+6. New dependencies, if any, with justification.
+7. Test and verification strategy.
+8. Proposed commit sequence.
+9. Risks and unresolved questions.
+
+Then stop and wait for my explicit approval before implementation.

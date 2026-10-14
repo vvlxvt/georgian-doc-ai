@@ -111,31 +111,31 @@ support or guarantee that every citation actually substantiates its sentence.
 
 All operational settings are environment-backed; see `.env.example` for the full list with defaults.
 
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `DATABASE_URL` | `sqlite:///data/app.db` | SQLAlchemy URL |
-| `QDRANT_URL` | `http://localhost:6333` | Remote instances can use their HTTPS endpoint |
-| `QDRANT_API_KEY` | *(empty)* | Optional; set for authenticated remote Qdrant instances |
-| `QDRANT_COLLECTION` | `documents` | |
-| `EMBEDDING_MODEL` | `BAAI/bge-m3` | |
-| `EMBEDDING_SIZE` | `1024` | Must match the Qdrant collection |
-| `LLM_PROVIDER` | `openrouter` | `openrouter` or `ollama`; there is no provider fallback |
-| `LLM_MAX_ATTEMPTS` | `2` | Total attempts, including the first; range 1-3 |
-| `LLM_TOTAL_TIMEOUT` | `180.0` | Overall request budget in seconds; maximum 300 |
-| `OLLAMA_URL` | `http://localhost:11434` | |
-| `OLLAMA_MODEL` | `llama3.2:3b` | |
-| `OPENROUTER_URL` | `https://api.openrouter.ai` | Base URL; the adapter uses `/api/v1/chat/completions` |
-| `OPENROUTER_API_KEY` | *(empty)* | Required when `LLM_PROVIDER=openrouter`; keep it secret |
-| `OPENROUTER_MODEL` | `gpt-4o-mini` | Model identifier sent to OpenRouter |
-| `OPENROUTER_CONNECT_TIMEOUT` | `10.0` | Seconds |
-| `OPENROUTER_READ_TIMEOUT` | `120.0` | Seconds for read and write; pool timeout follows the connect timeout |
-| `OPENROUTER_SUPPORTS_STRUCTURED_OUTPUT` | `false` | Set true only when supported by the configured model |
-| `OPENROUTER_SUPPORTS_JSON_MODE` | `false` | Set true only when supported by the configured model |
-| `OPENROUTER_SUPPORTS_STREAMING` | `false` | Set true only when supported by the configured model |
-| `TESSERACT_LANGUAGES` | `kat+eng` | Languages joined with `+` |
-| `CHUNK_MAX_LENGTH` | `1000` | Characters, not tokens |
-| `CHUNK_OVERLAP` | `100` | Words of overlap between chunks |
-| `MIN_TEXT_LENGTH` | `20` | Below this a page goes to OCR |
+| Variable                                | Default                     | Notes                                                                |
+| --------------------------------------- | --------------------------- | -------------------------------------------------------------------- |
+| `DATABASE_URL`                          | `sqlite:///data/app.db`     | SQLAlchemy URL                                                       |
+| `QDRANT_URL`                            | `http://localhost:6333`     | Remote instances can use their HTTPS endpoint                        |
+| `QDRANT_API_KEY`                        | _(empty)_                   | Optional; set for authenticated remote Qdrant instances              |
+| `QDRANT_COLLECTION`                     | `documents`                 |                                                                      |
+| `EMBEDDING_MODEL`                       | `BAAI/bge-m3`               |                                                                      |
+| `EMBEDDING_SIZE`                        | `1024`                      | Must match the Qdrant collection                                     |
+| `LLM_PROVIDER`                          | `openrouter`                | `openrouter` or `ollama`; there is no provider fallback              |
+| `LLM_MAX_ATTEMPTS`                      | `2`                         | Total attempts, including the first; range 1-3                       |
+| `LLM_TOTAL_TIMEOUT`                     | `180.0`                     | Overall request budget in seconds; maximum 300                       |
+| `OLLAMA_URL`                            | `http://localhost:11434`    |                                                                      |
+| `OLLAMA_MODEL`                          | `llama3.2:3b`               |                                                                      |
+| `OPENROUTER_URL`                        | `https://api.openrouter.ai` | Base URL; the adapter uses `/api/v1/chat/completions`                |
+| `OPENROUTER_API_KEY`                    | _(empty)_                   | Required when `LLM_PROVIDER=openrouter`; keep it secret              |
+| `OPENROUTER_MODEL`                      | `gpt-4o-mini`               | Model identifier sent to OpenRouter                                  |
+| `OPENROUTER_CONNECT_TIMEOUT`            | `10.0`                      | Seconds                                                              |
+| `OPENROUTER_READ_TIMEOUT`               | `120.0`                     | Seconds for read and write; pool timeout follows the connect timeout |
+| `OPENROUTER_SUPPORTS_STRUCTURED_OUTPUT` | `false`                     | Set true only when supported by the configured model                 |
+| `OPENROUTER_SUPPORTS_JSON_MODE`         | `false`                     | Set true only when supported by the configured model                 |
+| `OPENROUTER_SUPPORTS_STREAMING`         | `false`                     | Set true only when supported by the configured model                 |
+| `TESSERACT_LANGUAGES`                   | `kat+eng`                   | Languages joined with `+`                                            |
+| `CHUNK_MAX_LENGTH`                      | `1000`                      | Characters, not tokens                                               |
+| `CHUNK_OVERLAP`                         | `100`                       | Words of overlap between chunks                                      |
+| `MIN_TEXT_LENGTH`                       | `20`                        | Below this a page goes to OCR                                        |
 
 `OPENROUTER_SUPPORTS_STRUCTURED_OUTPUT` and `OPENROUTER_SUPPORTS_JSON_MODE`
 describe configured provider capabilities. The current answer pipeline requests
