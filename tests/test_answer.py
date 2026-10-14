@@ -1,6 +1,6 @@
 import pytest
 
-from app.answer import AnswerGenerator
+from app.answer import AnswerGenerator, AnswerResult
 from app.context import BuiltContext, SourceRecord
 from app.llm import LLMError, LLMErrorCategory, LLMRequest, LLMResponse, LLMService
 
@@ -52,6 +52,8 @@ def test_answer_generator_returns_plain_text_with_source_page_citation() -> None
     answer = generator.generate("Каков срок?", make_context(make_source(2)))
 
     assert answer == "Договор действует один год. [стр. 2]"
+    assert isinstance(answer, AnswerResult)
+    assert answer.model_name == "test-model"
     assert llm.requests[0].response_schema is None
 
 

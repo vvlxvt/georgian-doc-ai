@@ -374,6 +374,13 @@ h2 {
   font-size: 1.35rem;
 }
 
+.answer-model {
+  margin: 0 0 var(--space-2);
+  color: var(--color-muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
 .answer-text {
   margin-bottom: 0;
   overflow-wrap: anywhere;

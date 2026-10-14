@@ -398,6 +398,8 @@ def ask_form(
     request: Request,
     session: Session = Depends(get_session),
 ):
+    from app.dependencies import get_llm_service
+
     documents = _get_question_documents(session)
     return templates.TemplateResponse(
         request=request,
@@ -405,6 +407,7 @@ def ask_form(
         context={
             "answer": None,
             "documents": documents,
+            "llm_model_name": get_llm_service().model,
             "max_question_chars": MAX_QUESTION_CHARS,
             "question": "",
             "selected_document_ids": [],
@@ -425,6 +428,8 @@ def ask_question(
     document_ids: list[str] = Form(default=[]),
     session: Session = Depends(get_session),
 ):
+    from app.dependencies import get_llm_service
+
     question = question.strip()
     answer = None
     error = None
@@ -432,6 +437,7 @@ def ask_question(
     documents = _get_question_documents(session)
     available_document_ids = {document.id for document in documents}
     selected_document_ids = list(dict.fromkeys(document_ids))
+    llm_model_name = get_llm_service().model
 
     if not question:
         error = "Введите вопрос."
@@ -473,6 +479,9 @@ def ask_question(
             error = "Не удалось получить ответ. Проверьте доступность служб."
             status_code = 503
 
+    if answer is not None:
+        llm_model_name = getattr(answer, "model_name", None) or llm_model_name
+
     return templates.TemplateResponse(
         request=request,
         name="ask.html",
@@ -480,6 +489,7 @@ def ask_question(
             "answer": answer,
             "documents": documents,
             "error": error,
+            "llm_model_name": llm_model_name,
             "max_question_chars": MAX_QUESTION_CHARS,
             "question": question,
             "selected_document_ids": selected_document_ids,

@@ -531,6 +531,7 @@ def test_question_form_uses_rag_pipeline_and_escapes_answer(
     monkeypatch,
 ):
     from app import dependencies
+    from app.answer import AnswerResult
 
     document_ids = [
         add_web_document(
@@ -550,7 +551,10 @@ def test_question_form_uses_rag_pipeline_and_escapes_answer(
         def answer(self, question, document_ids=None):
             received_questions.append(question)
             assert document_ids == document_ids_expected
-            return "<script>alert(1)</script> Ответ. [стр. 2]"
+            return AnswerResult(
+                "<script>alert(1)</script> Ответ. [стр. 2]",
+                llm_model_name="gpt-4o-mini",
+            )
 
     document_ids_expected = document_ids
     monkeypatch.setattr(
@@ -574,6 +578,7 @@ def test_question_form_uses_rag_pipeline_and_escapes_answer(
     for document_id in document_ids:
         assert f'value="{document_id}"' in response.text
     assert response.text.count("checked") == len(document_ids)
+    assert "Используемая LLM: gpt-4o-mini" in response.text
     assert "&lt;script&gt;alert(1)&lt;/script&gt; Ответ. [стр. 2]" in response.text
     assert "<script>alert(1)</script>" not in response.text
 

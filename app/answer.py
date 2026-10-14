@@ -27,6 +27,19 @@ _PAGE_CITATION_PATTERN = re.compile(
 )
 
 
+class AnswerResult(str):
+    """String answer enriched with the actual model used to produce it."""
+
+    def __new__(cls, text: str, llm_model_name: str | None = None):
+        result = str.__new__(cls, text)
+        result._llm_model_name = llm_model_name
+        return result
+
+    @property
+    def model_name(self) -> str:
+        return self._llm_model_name or "не определена"
+
+
 class AnswerGenerator:
     def __init__(self, llm: LLMService):
         self.llm = llm
@@ -38,7 +51,10 @@ class AnswerGenerator:
             raise ValueError("question must not be empty")
 
         if not context.sources or not context.text.strip():
-            return INSUFFICIENT_INFORMATION_ANSWER
+            return AnswerResult(
+                INSUFFICIENT_INFORMATION_ANSWER,
+                llm_model_name=self.llm.model,
+            )
 
         response = self.llm.call(
             self._build_request(
@@ -78,7 +94,10 @@ class AnswerGenerator:
                 "The LLM provider returned empty answer text.",
             )
         if text == INSUFFICIENT_INFORMATION_ANSWER:
-            return INSUFFICIENT_INFORMATION_ANSWER
+            return AnswerResult(
+                INSUFFICIENT_INFORMATION_ANSWER,
+                llm_model_name=response.model,
+            )
 
         citations = list(_PAGE_CITATION_PATTERN.finditer(text))
         if not citations:
@@ -116,7 +135,7 @@ class AnswerGenerator:
                 LLMErrorCategory.INVALID_RESPONSE,
                 "The LLM response did not cite every answer sentence.",
             )
-        return text
+        return AnswerResult(text, llm_model_name=response.model)
 
     @staticmethod
     def _response_error(
