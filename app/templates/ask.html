@@ -15,8 +15,8 @@
     <p class="eyebrow">Поиск по смыслу</p>
     <h1 id="page-title">Задать вопрос</h1>
     <p class="page-description">
-      Ответ будет сформирован по найденным фрагментам и может содержать ссылки
-      на страницы исходных документов.
+      Сформулируйте вопрос обычным языком. Ответ будет опираться на найденные
+      фрагменты и содержать ссылки на страницы источников.
     </p>
   </section>
 
@@ -24,50 +24,81 @@
     <div class="alert alert-error" role="alert">{{ error }}</div>
   {% endif %}
 
-  <form
-    class="form-card question-form"
-    action="{{ url_for('ask_question') }}"
-    method="post"
-    data-pending-message="Ищем информацию в документах и формируем ответ..."
-    data-pending-label="Ищем ответ..."
-  >
-    <fieldset class="document-filter">
-      <legend>Искать в документах</legend>
-      <p class="field-help" id="document-filter-help">
-        Если ничего не отметить, поиск будет выполнен по всем документам.
-      </p>
-      {% if documents %}
-        <div class="document-options" aria-describedby="document-filter-help">
-          {% for document in documents %}
-            <label class="document-option">
-              <input
-                type="checkbox"
-                name="document_ids"
-                value="{{ document.id }}"
-                {% if document.id in selected_document_ids %}checked{% endif %}
-              >
-              <span>{{ document.filename }}</span>
-            </label>
-          {% endfor %}
+  <div class="question-layout">
+    <div class="question-main">
+      <form
+        class="form-card question-form"
+        action="{{ url_for('ask_question') }}"
+        method="post"
+        data-pending-message="Ищем информацию в документах и формируем ответ..."
+        data-pending-label="Ищем ответ..."
+      >
+        <fieldset class="document-filter">
+          <legend class="filter-heading">
+            Источники для поиска
+            <span class="filter-hint">Необязательно</span>
+          </legend>
+          <p class="field-help" id="document-filter-help">
+            Если ничего не отметить, поиск будет выполнен по всем документам.
+          </p>
+          {% if documents %}
+            <div class="document-options" aria-describedby="document-filter-help">
+              {% for document in documents %}
+                <label class="document-option">
+                  <input
+                    type="checkbox"
+                    name="document_ids"
+                    value="{{ document.id }}"
+                    {% if document.id in selected_document_ids %}checked{% endif %}
+                  >
+                  <span class="document-option-name">{{ document.filename }}</span>
+                  <span class="document-option-check" aria-hidden="true">✓</span>
+                </label>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="no-documents">
+              <p class="field-help">Документы ещё не добавлены.</p>
+              <a class="text-link" href="{{ url_for('upload_form') }}">Загрузить первый PDF <span aria-hidden="true">→</span></a>
+            </div>
+          {% endif %}
+        </fieldset>
+        <div class="form-field question-field">
+          <label for="question">Ваш вопрос</label>
+          <textarea id="question" name="question" rows="4" maxlength="{{ max_question_chars }}" required aria-describedby="question-help">{{ question or "" }}</textarea>
+          <p class="field-help" id="question-help">До {{ max_question_chars }} символов. Ответ будет на русском языке.</p>
         </div>
-      {% else %}
-        <p class="field-help">Документы ещё не добавлены.</p>
-      {% endif %}
-    </fieldset>
-    <div class="form-field">
-      <label for="question">Ваш вопрос</label>
-      <textarea id="question" name="question" rows="4" maxlength="{{ max_question_chars }}" required aria-describedby="question-help">{{ question or "" }}</textarea>
-      <p class="field-help" id="question-help">Не более {{ max_question_chars }} символов. Ответ будет на русском языке.</p>
-    </div>
-    <button class="button button-primary" type="submit">Найти ответ</button>
-    <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
-  </form>
+        <div class="question-submit">
+          <button class="button button-primary" type="submit"><span aria-hidden="true">✳</span> Найти ответ</button>
+          <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
+        </div>
+      </form>
 
-  {% if answer is not none %}
-    <section class="answer-card" aria-labelledby="answer-title" aria-live="polite">
-      <p class="eyebrow">Ответ по документам</p>
-      <h2 id="answer-title">Результат</h2>
-      <p class="answer-text">{{ answer }}</p>
-    </section>
-  {% endif %}
+      {% if answer is not none %}
+        <section class="answer-card" aria-labelledby="answer-title" aria-live="polite">
+          <div class="answer-header">
+            <span class="answer-icon" aria-hidden="true">✳</span>
+            <div>
+              <p class="eyebrow">Ответ по документам</p>
+              <h2 id="answer-title">Результат</h2>
+            </div>
+          </div>
+          <p class="answer-model">Используемая LLM: {{ llm_model_name or "не определена" }}</p>
+          <p class="answer-text">{{ answer }}</p>
+          <p class="answer-footnote"><span aria-hidden="true">↗</span> Проверяйте цитаты по страницам оригинального документа.</p>
+        </section>
+      {% endif %}
+    </div>
+    <aside class="question-aside" aria-labelledby="answer-process-title">
+      <span class="question-aside-mark" aria-hidden="true">✳</span>
+      <p class="eyebrow">Поиск по источникам</p>
+      <h2 id="answer-process-title">Как формируется ответ</h2>
+      <ol class="answer-process">
+        <li><span>01</span> Находятся подходящие фрагменты документов.</li>
+        <li><span>02</span> Ответ составляется на русском языке по найденному контексту.</li>
+        <li><span>03</span> Цитаты указывают номера страниц для проверки.</li>
+      </ol>
+      <p class="question-aside-note">Если нужных сведений в источниках нет, система сообщит об этом.</p>
+    </aside>
+  </div>
 {% endblock %}

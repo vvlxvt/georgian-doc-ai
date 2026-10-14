@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="{% block meta_description %}Поиск по грузинским документам с ответами на русском языке.{% endblock %}">
-    <meta name="theme-color" content="#f7f8fa">
+    <meta name="theme-color" content="#f4f5f2">
     <title>{% block title %}Georgian Document RAG{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', path='/css/variables.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/css/main.css') }}">
@@ -14,13 +14,13 @@
   </head>
   <body>
     <a class="skip-link" href="#main-content">Перейти к содержимому</a>
-    <header class="site-header">
-      <div class="container header-inner">
+    <div class="app-shell">
+      <aside class="site-sidebar">
         <a class="brand" href="{{ url_for('home') }}" aria-label="Georgian Document RAG — главная">
           <span class="brand-mark" aria-hidden="true">G</span>
           <span class="brand-copy">
-            <span class="brand-name">Документы Грузии</span>
-            <span class="brand-caption">Поиск с ответами и ссылками на страницы</span>
+            <span class="brand-name">Kartuli</span>
+            <span class="brand-caption">документальная база</span>
           </span>
         </a>
         <nav class="site-nav" aria-label="Основная навигация">
@@ -31,17 +31,30 @@
             <a class="nav-link" href="{{ url_for('ask_form') }}">Задать вопрос</a>
           {% endblock %}
         </nav>
+        <div class="sidebar-note">
+          <span class="sidebar-note-mark" aria-hidden="true">✓</span>
+          <p>Управляйте библиотекой и ищите ответы по документам.</p>
+        </div>
+        <p class="sidebar-version">GEORGIAN DOCUMENT RAG</p>
+      </aside>
+      <div class="workspace">
+        <header class="workspace-header">
+          <div class="workspace-header-inner">
+            <p class="workspace-location"><span aria-hidden="true">⌂</span> Рабочее пространство <span aria-hidden="true">/</span> Документы</p>
+            <a class="header-action" href="{{ url_for('ask_form') }}">
+              <span aria-hidden="true">↗</span> Задать вопрос
+            </a>
+          </div>
+        </header>
+        <main id="main-content" class="main-content">
+          {% block content %}{% endblock %}
+        </main>
+        <footer class="workspace-footer">
+          <span>Документы Грузии</span>
+          <span>Ответы формируются по содержимому источников</span>
+        </footer>
       </div>
-    </header>
-    <main id="main-content" class="container main-content">
-      {% block content %}{% endblock %}
-    </main>
-    <footer class="site-footer">
-      <div class="container footer-inner">
-        <span>Georgian Document RAG</span>
-        <span>Ответы формируются по содержимому документов</span>
-      </div>
-    </footer>
+    </div>
     <script src="{{ url_for('static', path='/js/form-pending.js') }}" defer></script>
   </body>
 </html>

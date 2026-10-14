@@ -50,6 +50,9 @@ def test_home_page_renders_shared_layout_and_russian_content():
     assert '<html lang="ru">' in response.text
     assert "<title>Главная — Georgian Document RAG</title>" in response.text
     assert "Находите ответы в документах" in response.text
+    assert '<div class="app-shell">' in response.text
+    assert 'class="nav-link is-active" href="http://testserver/"' in response.text
+    assert 'class="dashboard-hero"' in response.text
     assert "/static/css/main.css" in response.text
 
 
@@ -70,17 +73,19 @@ def test_static_pending_script_is_mounted():
 
 
 @pytest.mark.parametrize(
-    ("path", "pending_message", "pending_label"),
+    ("path", "pending_message", "pending_label", "layout_class"),
     [
         (
             "/upload",
             "Файл загружается и индексируется",
             "Идёт индексация...",
+            "upload-layout",
         ),
         (
             "/ask",
             "Ищем информацию в документах",
             "Ищем ответ...",
+            "question-layout",
         ),
     ],
 )
@@ -88,6 +93,7 @@ def test_processing_forms_render_accessible_pending_status(
     path,
     pending_message,
     pending_label,
+    layout_class,
 ):
     with TestClient(app) as client:
         response = client.get(path)
@@ -95,6 +101,7 @@ def test_processing_forms_render_accessible_pending_status(
     assert response.status_code == 200
     assert pending_message in response.text
     assert pending_label in response.text
+    assert f'class="{layout_class}"' in response.text
     assert 'data-pending-status role="status" aria-live="polite" hidden' in (
         response.text
     )
@@ -110,6 +117,7 @@ def test_documents_page_renders_empty_state(web_session_factory):
     assert response.status_code == 200
     assert "Пока нет документов" in response.text
     assert "не проверяет наличие векторов в Qdrant" in response.text
+    assert 'class="empty-state-icon"' in response.text
 
 
 def test_documents_page_renders_delete_form(web_session_factory):
@@ -523,6 +531,7 @@ def test_question_form_uses_rag_pipeline_and_escapes_answer(
     monkeypatch,
 ):
     from app import dependencies
+    from app.answer import AnswerResult
 
     document_ids = [
         add_web_document(
@@ -542,7 +551,10 @@ def test_question_form_uses_rag_pipeline_and_escapes_answer(
         def answer(self, question, document_ids=None):
             received_questions.append(question)
             assert document_ids == document_ids_expected
-            return "<script>alert(1)</script> Ответ. [стр. 2]"
+            return AnswerResult(
+                "<script>alert(1)</script> Ответ. [стр. 2]",
+                llm_model_name="gpt-4o-mini",
+            )
 
     document_ids_expected = document_ids
     monkeypatch.setattr(
@@ -566,6 +578,7 @@ def test_question_form_uses_rag_pipeline_and_escapes_answer(
     for document_id in document_ids:
         assert f'value="{document_id}"' in response.text
     assert response.text.count("checked") == len(document_ids)
+    assert "Используемая LLM: gpt-4o-mini" in response.text
     assert "&lt;script&gt;alert(1)&lt;/script&gt; Ответ. [стр. 2]" in response.text
     assert "<script>alert(1)</script>" not in response.text
 
@@ -579,7 +592,7 @@ def test_question_form_initial_state_lists_available_documents(web_session_facto
 
     assert response.status_code == 200
     assert "Результат" not in response.text
-    assert "Искать в документах" in response.text
+    assert "Источники для поиска" in response.text
     assert "document.pdf" in response.text
     assert f'value="{document_id}"' in response.text
 
