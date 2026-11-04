@@ -1,14 +1,14 @@
-# Georgian Document RAG
+# English and Georgian Document RAG
 
-RAG prototype for extracting Georgian PDF documents and answering grounded questions in Russian.
+RAG application for extracting English and Georgian PDF documents and answering grounded questions in Russian.
 
-Source documents are Georgian, answers and prompt text are Russian, and all code and documentation is English.
+Source documents may be in English, Georgian, or contain both languages. Answers and prompt text are Russian, and all code and documentation is English.
 
 ## Architecture
 
 Ingestion and query paths are separate:
 
-- **Ingestion**: `app/pipeline.py` reads a PDF (`app/pdf.py`), uses the native text layer when a page has enough text and falls back to Tesseract OCR (`app/ocr.py`), normalizes it (`app/text.py`), chunks it by characters (`app/chunking.py`), stores pages and chunks in SQLite (`app/models.py`, `app/repositories.py`), and indexes the chunks in Qdrant (`app/indexing.py`, `app/qdrant_store.py`).
+- **Ingestion**: `app/pipeline.py` reads each PDF page (`app/pdf.py`). If its native text layer contains at least `MIN_TEXT_LENGTH` characters, that text is used directly regardless of whether it is English or Georgian. Shorter or missing native text falls back to Tesseract OCR (`app/ocr.py`), configured with both `kat` (Georgian) and `eng` (English) by default. Tesseract recognizes both languages together, including mixed-language pages; the application does not detect a single page language or choose one OCR language dynamically. The extracted text is normalized (`app/text.py`), chunked by characters (`app/chunking.py`), stored in SQLite (`app/models.py`, `app/repositories.py`), and indexed in Qdrant (`app/indexing.py`, `app/qdrant_store.py`).
 - **Query**: `app/rag.py` embeds the question (`app/embeddings.py`), searches Qdrant (`app/retrieval.py`), validates and wraps hits as untrusted source blocks with request-local IDs (`app/context.py`), and asks the configured LLM provider for a Russian answer with `[стр. N]` citations (`app/answer.py`, `app/llm.py`). Prompt instructions are versioned and separated from evidence where the provider supports separate messages. OpenRouter is selected by default; Ollama can be selected explicitly.
 
 External services sit behind abstract interfaces (`EmbeddingService`, `VectorStore`, `OCRProcessor`, `LLMService`) and are constructed once per process in `app/dependencies.py`.
@@ -29,7 +29,7 @@ ingestion and RAG services and preserves the CLI.
    remote Qdrant instance, set `QDRANT_URL` to its endpoint and set
    `QDRANT_API_KEY` if the instance requires authentication. Keep the API key
    in `.env` or another secret store; do not commit it.
-3. Start Qdrant and configure the selected LLM provider. The default OpenRouter provider requires `OPENROUTER_API_KEY`; to use Ollama, set `LLM_PROVIDER=ollama`, start Ollama, and install the configured model. Install Tesseract language data for `kat` and `eng`.
+3. Start Qdrant and configure the selected LLM provider. The default OpenRouter provider requires `OPENROUTER_API_KEY`; to use Ollama, set `LLM_PROVIDER=ollama`, start Ollama, and install the configured model. Install Tesseract language data for `kat` and `eng` to OCR Georgian and English scans.
 4. Apply migrations:
 
    ```powershell
@@ -48,7 +48,7 @@ ingestion and RAG services and preserves the CLI.
    .\venv\Scripts\python.exe main.py index data\input\georgian_scan.pdf
    ```
 
-Re-running `index` on the same file is cheap: pages whose content hash is unchanged are skipped, so OCR is not repeated.
+Re-running `index` on the same file is cheap: pages whose content hash is unchanged are skipped, so OCR is not repeated. A PDF with a usable text layer is extracted directly; scanned pages or pages with less than `MIN_TEXT_LENGTH` characters of native text use OCR. A long but poor-quality or garbled native text layer can pass the current length check and therefore avoid OCR.
 
 ## Web UI
 
@@ -132,10 +132,10 @@ All operational settings are environment-backed; see `.env.example` for the full
 | `OPENROUTER_SUPPORTS_STRUCTURED_OUTPUT` | `false`                     | Set true only when supported by the configured model                 |
 | `OPENROUTER_SUPPORTS_JSON_MODE`         | `false`                     | Set true only when supported by the configured model                 |
 | `OPENROUTER_SUPPORTS_STREAMING`         | `false`                     | Set true only when supported by the configured model                 |
-| `TESSERACT_LANGUAGES`                   | `kat+eng`                   | Languages joined with `+`                                            |
+| `TESSERACT_LANGUAGES`                   | `kat+eng`                   | Tesseract OCR languages joined with `+`; install each trained data file |
 | `CHUNK_MAX_LENGTH`                      | `1000`                      | Characters, not tokens                                               |
 | `CHUNK_OVERLAP`                         | `100`                       | Words of overlap between chunks                                      |
-| `MIN_TEXT_LENGTH`                       | `20`                        | Below this a page goes to OCR                                        |
+| `MIN_TEXT_LENGTH`                       | `20`                        | Native text shorter than this many characters falls back to OCR      |
 
 `OPENROUTER_SUPPORTS_STRUCTURED_OUTPUT` and `OPENROUTER_SUPPORTS_JSON_MODE`
 describe configured provider capabilities. The current answer pipeline requests
