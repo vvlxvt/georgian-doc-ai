@@ -1,6 +1,6 @@
 import pytest
 
-from app.answer import AnswerGenerator, AnswerResult
+from app.answer import AnswerGenerator, AnswerResult, ChatAnswerResult
 from app.context import BuiltContext, SourceRecord
 from app.llm import LLMError, LLMErrorCategory, LLMRequest, LLMResponse, LLMService
 
@@ -142,3 +142,70 @@ def test_answer_generator_rejects_multiple_citations_for_one_uncited_sentence() 
 
     with pytest.raises(LLMError, match="every answer sentence"):
         generator.generate("Вопрос", make_context(make_source(1)))
+
+
+def test_generate_with_sources_returns_structured_result() -> None:
+    llm = FakeLLM("Договор действует один год. [стр. 2]")
+    generator = AnswerGenerator(llm)
+
+    result = generator.generate_with_sources(
+        "Каков срок?", make_context(make_source(2))
+    )
+
+    assert isinstance(result, ChatAnswerResult)
+    assert result.answer == "Договор действует один год. [стр. 2]"
+    assert result.model_name == "test-model"
+    assert len(result.sources) == 1
+    assert result.sources[0].document_id == "document-1"
+    assert result.sources[0].page_number == 2
+    assert result.sources[0].chunk_id == "chunk-2"
+
+
+def test_generate_with_sources_returns_source_references_without_text() -> None:
+    llm = FakeLLM("Ответ. [стр. 1]")
+    generator = AnswerGenerator(llm)
+
+    result = generator.generate_with_sources(
+        "Вопрос", make_context(make_source(1, "Secret source text"))
+    )
+
+    assert result.sources[0].document_id == "document-1"
+    assert result.sources[0].page_number == 1
+    assert result.sources[0].chunk_id == "chunk-1"
+
+
+def test_generate_with_sources_empty_context() -> None:
+    llm = FakeLLM()
+    generator = AnswerGenerator(llm)
+
+    result = generator.generate_with_sources(
+        "Вопрос", BuiltContext(sources=(), text="")
+    )
+
+    expected = "В предоставленных документах недостаточно информации для ответа."
+    assert result.answer == expected
+    assert result.model_name == "test-model"
+    assert result.sources == ()
+
+
+def test_generate_with_sources_invalid_citation_raises() -> None:
+    generator = AnswerGenerator(FakeLLM("Ответ. [стр. 3]"))
+
+    with pytest.raises(LLMError, match="outside the retrieved sources"):
+        generator.generate_with_sources(
+            "Вопрос", make_context(make_source(1), make_source(2))
+        )
+
+
+def test_generate_with_sources_missing_citations_raises() -> None:
+    generator = AnswerGenerator(FakeLLM("Без цитат."))
+
+    with pytest.raises(LLMError, match="page citations"):
+        generator.generate_with_sources("Вопрос", make_context(make_source(1)))
+
+
+def test_generate_with_sources_uncited_sentence_raises() -> None:
+    generator = AnswerGenerator(FakeLLM("Первое. [стр. 1] Второе."))
+
+    with pytest.raises(LLMError, match="cite every answer sentence"):
+        generator.generate_with_sources("Вопрос", make_context(make_source(1)))

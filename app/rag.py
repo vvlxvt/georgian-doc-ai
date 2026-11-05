@@ -1,4 +1,4 @@
-from app.answer import AnswerGenerator
+from app.answer import AnswerGenerator, ChatAnswerResult
 from app.context import ContextBuilder
 from app.retrieval import Retriever
 
@@ -33,6 +33,29 @@ class RAGPipeline:
         context = self.context_builder.build_context(results)
 
         return self.answer_generator.generate(
+            question=question,
+            context=context,
+        )
+
+    def answer_with_sources(
+        self,
+        question: str,
+        limit: int = 5,
+        score_threshold: float | None = None,
+        document_id: str | None = None,
+        document_ids: list[str] | None = None,
+    ) -> ChatAnswerResult:
+        results = self.retriever.search(
+            query=question,
+            limit=limit,
+            score_threshold=score_threshold,
+            document_id=document_id,
+            document_ids=document_ids,
+        )
+
+        context = self.context_builder.build_context(results)
+
+        return self.answer_generator.generate_with_sources(
             question=question,
             context=context,
         )

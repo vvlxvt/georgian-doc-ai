@@ -1,6 +1,6 @@
 import httpx
 
-from app.answer import ANSWER_PROMPT_VERSION, AnswerGenerator
+from app.answer import ANSWER_PROMPT_VERSION, AnswerGenerator, ChatAnswerResult
 from app.context import ContextBuilder
 from app.embeddings import EmbeddingService
 from app.llm import (
@@ -162,3 +162,30 @@ def test_rag_pipeline_uses_openrouter_adapter_with_mocked_http(monkeypatch):
     assert "ID источника: S1" in messages[-1]["content"]
     assert "обычный текст" in messages[0]["content"]
     assert "response_format" not in kwargs["json"]
+
+
+def test_rag_pipeline_answer_with_sources():
+    embedding_service = FakeEmbeddingService()
+    vector_store = FakeVectorStore()
+    llm = FakeLLMService()
+
+    retriever = Retriever(
+        embedding_service=embedding_service,
+        vector_store=vector_store,
+    )
+
+    pipeline = RAGPipeline(
+        retriever=retriever,
+        context_builder=ContextBuilder(),
+        answer_generator=AnswerGenerator(llm),
+    )
+
+    result = pipeline.answer_with_sources(question="Каков срок действия договора?")
+
+    assert isinstance(result, ChatAnswerResult)
+    assert result.answer == "Договор действует один год. [стр. 3]"
+    assert result.model_name == "test-model"
+    assert len(result.sources) == 1
+    assert result.sources[0].document_id == "doc-1"
+    assert result.sources[0].page_number == 3
+    assert result.sources[0].chunk_id == "chunk-1"

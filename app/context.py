@@ -66,3 +66,14 @@ class ContextBuilder:
         ]
 
         return BuiltContext(sources=tuple(sources), text="\n\n".join(sections))
+
+
+@dataclass(frozen=True)
+class SourceReference:
+    """Citation-safe source metadata: document, page, and chunk identifiers only.
+    Source text is intentionally excluded: references are used for display and
+    persistence of page citations, never for re-injecting retrieved evidence."""
+
+    document_id: str
+    page_number: int
+    chunk_id: str

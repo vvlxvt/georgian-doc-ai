@@ -1,6 +1,9 @@
-import re
+from __future__ import annotations
 
-from app.context import BuiltContext, SourceRecord
+import re
+from dataclasses import dataclass
+
+from app.context import BuiltContext, SourceRecord, SourceReference
 from app.llm import LLMError, LLMErrorCategory, LLMRequest, LLMResponse, LLMService
 
 ANSWER_PROMPT_VERSION = "answer-v3"
@@ -64,6 +67,29 @@ class AnswerGenerator:
         )
         return self._render_response(response, context.sources)
 
+    def generate_with_sources(
+        self, question: str, context: BuiltContext
+    ) -> ChatAnswerResult:
+        question = question.strip()
+
+        if not question:
+            raise ValueError("question must not be empty")
+
+        if not context.sources or not context.text.strip():
+            return ChatAnswerResult(
+                answer=INSUFFICIENT_INFORMATION_ANSWER,
+                model_name=self.llm.model,
+                sources=(),
+            )
+
+        response = self.llm.call(
+            self._build_request(
+                question=question,
+                context=context,
+            )
+        )
+        return self._render_response_with_sources(response, context.sources)
+
     @staticmethod
     def _build_request(question: str, context: BuiltContext) -> LLMRequest:
         prompt = f"Источники:\n{context.text}\n\nВопрос:\n{question}"
@@ -74,11 +100,12 @@ class AnswerGenerator:
         )
 
     @classmethod
-    def _render_response(
+    def _validate_response(
         cls,
         response: LLMResponse,
         sources: tuple[SourceRecord, ...],
     ) -> str:
+        """Validate an LLM answer and return the plain text answer."""
         if response.refused:
             raise cls._response_error(
                 response,
@@ -94,10 +121,7 @@ class AnswerGenerator:
                 "The LLM provider returned empty answer text.",
             )
         if text == INSUFFICIENT_INFORMATION_ANSWER:
-            return AnswerResult(
-                INSUFFICIENT_INFORMATION_ANSWER,
-                llm_model_name=response.model,
-            )
+            return INSUFFICIENT_INFORMATION_ANSWER
 
         citations = list(_PAGE_CITATION_PATTERN.finditer(text))
         if not citations:
@@ -135,7 +159,39 @@ class AnswerGenerator:
                 LLMErrorCategory.INVALID_RESPONSE,
                 "The LLM response did not cite every answer sentence.",
             )
-        return AnswerResult(text, llm_model_name=response.model)
+        return text
+
+    @classmethod
+    def _render_response(
+        cls,
+        response: LLMResponse,
+        sources: tuple[SourceRecord, ...],
+    ) -> str:
+        return AnswerResult(
+            cls._validate_response(response, sources),
+            llm_model_name=response.model,
+        )
+
+    @classmethod
+    def _render_response_with_sources(
+        cls,
+        response: LLMResponse,
+        sources: tuple[SourceRecord, ...],
+    ) -> ChatAnswerResult:
+        text = cls._validate_response(response, sources)
+        source_references = tuple(
+            SourceReference(
+                document_id=source.document_id,
+                page_number=source.page_number,
+                chunk_id=source.chunk_id,
+            )
+            for source in sources
+        )
+        return ChatAnswerResult(
+            answer=text,
+            model_name=response.model,
+            sources=source_references,
+        )
 
     @staticmethod
     def _response_error(
@@ -152,3 +208,12 @@ class AnswerGenerator:
             attempts=response.attempts,
             duration_seconds=response.duration_seconds,
         )
+
+
+@dataclass(frozen=True)
+class ChatAnswerResult:
+    """Structured answer result with validated source references."""
+
+    answer: str
+    model_name: str
+    sources: tuple[SourceReference, ...]

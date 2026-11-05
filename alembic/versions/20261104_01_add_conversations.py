@@ -38,7 +38,9 @@ def upgrade() -> None:
                 ondelete="CASCADE",
             ),
         )
-        op.create_index("ix_conversations_document_id", "conversations", ["document_id"])
+        op.create_index(
+            "ix_conversations_document_id", "conversations", ["document_id"]
+        )
 
     if "messages" not in table_names:
         op.create_table(
