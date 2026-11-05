@@ -42,12 +42,17 @@ def test_migration_upgrades_legacy_schema_with_document_chunks(tmp_path):
     upgrade_database(database_path)
 
     inspector = inspect(engine)
-    assert "document_chunks" in inspector.get_table_names()
+    assert {"document_chunks", "conversations", "messages"}.issubset(
+        inspector.get_table_names()
+    )
     indexes = inspector.get_indexes("document_pages")
     assert any(
         index["name"] == "uq_document_pages_document_id_page_number" and index["unique"]
         for index in indexes
     )
+
+    conversation_foreign_keys = inspector.get_foreign_keys("conversations")
+    assert conversation_foreign_keys[0]["options"]["ondelete"] == "CASCADE"
 
 
 def test_page_number_is_unique_within_a_document(session):

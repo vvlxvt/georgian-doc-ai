@@ -17,6 +17,11 @@ class PageStatus(StrEnum):
     OCR_FAILED = "ocr_failed"
 
 
+class MessageRole(StrEnum):
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
 class Document(Base):
     __tablename__ = "documents"
 
@@ -35,6 +40,11 @@ class Document(Base):
     )
 
     pages: Mapped[list["DocumentPage"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
+
+    conversations: Mapped[list["Conversation"]] = relationship(
         back_populates="document",
         cascade="all, delete-orphan",
     )
@@ -124,4 +134,73 @@ class DocumentChunk(Base):
 
     page: Mapped["DocumentPage"] = relationship(
         back_populates="chunks",
+    )
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        index=True,
+    )
+
+    title: Mapped[str] = mapped_column(
+        String(255),
+        default="New conversation",
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    document: Mapped[Document] = relationship(
+        back_populates="conversations",
+    )
+
+    messages: Mapped[list["Message"]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="Message.created_at, Message.id",
+    )
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        index=True,
+    )
+
+    role: Mapped[MessageRole] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text)
+    sources_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC),
+    )
+
+    conversation: Mapped[Conversation] = relationship(
+        back_populates="messages",
     )
