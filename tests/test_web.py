@@ -987,3 +987,103 @@ def test_conversation_list_link_in_navigation(web_session_factory):
     assert response.status_code == 200
     assert 'href="http://testserver/conversations"' in response.text
     assert "Беседы" in response.text
+
+
+def test_delete_document_cascades_to_conversations_and_messages(
+    web_session_factory, monkeypatch
+):
+    with web_session_factory() as session:
+        document = Document(filename="document.pdf", file_hash="e" * 64)
+        session.add(document)
+        session.flush()
+        from app.models import Conversation, Message, MessageRole
+
+        conversation = Conversation(document_id=document.id, title="Test")
+        session.add(conversation)
+        session.flush()
+        message = Message(
+            conversation_id=conversation.id,
+            role=MessageRole.USER,
+            content="Тест",
+        )
+        session.add(message)
+        session.commit()
+        document_id = document.id
+        conversation_id = conversation.id
+        message_id = message.id
+
+    application = create_app(session_factory=web_session_factory)
+
+    class FakeVectorStore:
+        def delete_by_document(self, document_id):
+            pass
+
+        def upsert(self, vector_id, vector, payload):
+            pass
+
+        def search(
+            self,
+            vector,
+            limit=5,
+            score_threshold=None,
+            document_id=None,
+            document_ids=None,
+        ):
+            return []
+
+        def delete(self, vector_id):
+            pass
+
+        def delete_by_page(self, page_id, exclude_ids=None):
+            pass
+
+    from app import dependencies
+
+    monkeypatch_store = FakeVectorStore()
+    monkeypatch.setattr(dependencies, "get_vector_store", lambda: monkeypatch_store)
+
+    with TestClient(application) as client:
+        response = client.post(
+            f"/documents/{document_id}/delete",
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+
+    with web_session_factory() as session:
+        from app.models import Conversation, Message
+
+        assert session.get(Document, document_id) is None
+        assert session.get(Conversation, conversation_id) is None
+        assert session.get(Message, message_id) is None
+
+
+def test_delete_conversation_cascades_to_messages(web_session_factory):
+    conversation_id = add_web_conversation(web_session_factory)
+
+    with web_session_factory() as session:
+        from app.models import Message, MessageRole
+
+        message = Message(
+            conversation_id=conversation_id,
+            role=MessageRole.USER,
+            content="Тест",
+        )
+        session.add(message)
+        session.commit()
+        message_id = message.id
+
+    application = create_app(session_factory=web_session_factory)
+    with TestClient(application) as client:
+        response = client.post(
+            f"/conversations/{conversation_id}/delete",
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+
+    with web_session_factory() as session:
+        from app.models import Conversation, Message
+
+        assert session.get(Conversation, conversation_id) is None
+        assert session.get(Message, message_id) is None
