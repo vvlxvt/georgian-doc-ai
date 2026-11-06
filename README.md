@@ -145,6 +145,58 @@ Changing `EMBEDDING_MODEL` or `EMBEDDING_SIZE` requires a compatible Qdrant coll
 
 On startup, the application also ensures keyword payload indexes for `document_id` and `page_id`, which are required for filtered retrieval and stale-vector cleanup.
 
+
+## Chat
+
+The web UI adds a document-scoped chat on top of the one-shot `/ask` workflow.
+Conversations are stored in SQLite and each conversation is tied to a single
+document. Follow-up questions retrieve context only from that document's
+indexed chunks.
+
+### Chat workflows
+
+1. **Create a conversation:** On the Documents page, select a document and
+   create a conversation from it. The conversation inherits the document's
+   language and content scope.
+2. **Send a message:** Open the conversation, type your question in Russian,
+   and submit. The answer includes `[стр. N]` citations backed by the
+   retrieved chunks.
+3. **View history:** Reopening a conversation displays all persisted user and
+   assistant messages with their source page references.
+4. **Delete a conversation:** Deleting a conversation removes it and all its
+   messages. The source document remains in the library.
+
+### Routes
+
+| Route | Method | Description |
+|---|---|---|
+| `/conversations` | GET | List all conversations with their documents |
+| `/conversations` | POST | Create a conversation from a document (`document_id` form field) |
+| `/conversations/{id}` | GET | View a conversation with message history |
+| `/conversations/{id}/messages` | POST | Send a message in a conversation (`content` form field) |
+| `/conversations/{id}/delete` | POST | Delete a conversation and all its messages |
+
+### Constraints
+
+- **Local-only:** The UI binds to `127.0.0.1` and must not be exposed to a
+  network without authentication and authorization.
+- **No authentication:** The initial chat MVP has no login or access control.
+- **History limit:** Retrieval uses a bounded window of recent turns; older
+  history is not sent to the LLM.
+- **Citations only:** Stored source references contain document ID, page
+  number, and chunk ID — never the retrieved source text itself.
+- **No automatic retries:** LLM failures leave the user message persisted
+  without a fabricated assistant answer.
+
+### Limitations
+
+- Conversation titles are not auto-generated; they default to "New
+  conversation".
+- There is no per-document RAG selection within a conversation; retrieval is
+  always scoped to the conversation's document.
+- Deleting a document cascades to its conversations and messages (ORM
+  `delete-orphan`), and Qdrant vectors are removed before the SQL commit.
+
 ## Migrations
 
 Schema changes go through Alembic; `Base.metadata.create_all()` is never used for production schema evolution.
