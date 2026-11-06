@@ -32,7 +32,7 @@
           <div class="message-card message-{{ message.role }}">
             <div class="message-header">
               <span class="message-role">{{ "Вы" if message.role == "user" else "Ассистент" }}</span>
-              <span class="message-time">{{ message.created_at[:16] if message.created_at else "" }}</span>
+              <span class="message-time">{{ message.created_at_display }}</span>
             </div>
             <div class="message-text">{{ message.content }}</div>
             {% if message.role == "assistant" and message.parsed_sources %}
@@ -69,9 +69,9 @@
         </div>
       </form>
 
-      {% if rag_result is not none %}
+      {% if rag_result is not none and rag_result.assistant_message %}
         <div class="alert alert-info" role="status">
-          <p>Модель: {{ rag_result.model_name or "не определена" }}</p>
+          <p>Ответ: {{ rag_result.assistant_message.content }}</p>
           {% if rag_result.sources %}
             <p class="sources-label">Использованные страницы:</p>
             {% for source in rag_result.sources %}

@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import shutil
+from datetime import datetime
 from math import ceil
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -42,8 +43,17 @@ UPLOAD_CHUNK_BYTES = 1024 * 1024
 MAX_QUESTION_CHARS = 2000
 
 
+def _format_datetime(value):
+    """Format a datetime or already-string timestamp for display."""
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M")
+    return str(value)[:16]
+
+
 def _messages_with_parsed_sources(messages):
-    """Attach parsed source references to messages that have sources_json."""
+    """Attach parsed source references and formatted times to messages."""
     import json as _json
 
     for message in messages:
@@ -54,6 +64,7 @@ def _messages_with_parsed_sources(messages):
             except (_json.JSONDecodeError, TypeError):
                 parsed = None
         message.parsed_sources = parsed or []
+        message.created_at_display = _format_datetime(message.created_at)
     return messages
 
 
@@ -528,6 +539,9 @@ def conversations_list(
 ):
     repository = ConversationRepository(session)
     conversations = repository.list_all()
+    for conversation in conversations:
+        conversation.created_at_display = _format_datetime(conversation.created_at)
+        conversation.updated_at_display = _format_datetime(conversation.updated_at)
     return templates.TemplateResponse(
         request=request,
         name="conversations.html",
@@ -573,6 +587,7 @@ def conversation_view(
             "messages": messages,
             "error": None,
             "content": "",
+            "rag_result": None,
         },
     )
 

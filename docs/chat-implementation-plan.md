@@ -3,10 +3,10 @@
 ## Status
 
 - Total: 8
-- Done: 5
+- Done: 6
 - In progress: 1
 - Blocked: 0
-- Current: CHAT-06
+- Current: CHAT-07
 
 ## Scope and inspected architecture
 
@@ -99,7 +99,7 @@ Reusable components confirmed in the repository:
 - **ID:** CHAT-06
 - **Title:** Build conversation list and chat pages
 - **Goal:** Let a local user create and continue document-scoped conversations in the existing UI.
-- **Status:** TODO
+- **Status:** DONE
 - **Dependencies:** CHAT-05
 - **Scope:** Add templates following the current base layout and style conventions for conversation list/create, message history, send form, source page references, and conversation deletion. Start conversations from an existing document selection; do not add JS framework or build tooling. Ensure answer text is escaped and errors are Russian and actionable.
 - **Minimal tests:** Extend web tests to assert conversation list, document association, persisted history after a fresh GET, source page display, deletion controls, and HTML escaping.
