@@ -3,10 +3,10 @@
 ## Status
 
 - Total: 8
-- Done: 6
+- Done: 8
 - In progress: 1
 - Blocked: 0
-- Current: CHAT-07
+- Current: none
 
 ## Scope and inspected architecture
 
@@ -110,7 +110,7 @@ Reusable components confirmed in the repository:
 - **ID:** CHAT-07
 - **Title:** Verify cascade deletion and compatibility end to end
 - **Goal:** Protect document deletion, chat persistence, and current CLI/one-shot RAG behavior.
-- **Status:** TODO
+- **Status:** DONE
 - **Dependencies:** CHAT-01, CHAT-05, CHAT-06
 - **Scope:** Add focused integration-level tests using in-memory SQLite and fake vector/RAG services for deleting a conversation, deleting its document, and continuing to list/use other documents. Review ordering of Qdrant deletion and SQL commit in current document deletion workflow after cascades are added. No new infrastructure.
 - **Minimal tests:** New or extended web/repository tests; run migration tests, all non-integration tests, CLI tests, and existing `/ask` regression tests.
