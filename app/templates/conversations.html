@@ -3,13 +3,6 @@
 {% block title %}Беседы — Georgian Document RAG{% endblock %}
 {% block meta_description %}Список хранящихся бесед по документам.{% endblock %}
 
-{% block navigation %}
-  <a class="nav-link" href="{{ url_for('home') }}">Главная</a>
-  <a class="nav-link" href="{{ url_for('documents') }}">Документы</a>
-  <a class="nav-link" href="{{ url_for('upload_form') }}">Загрузить PDF</a>
-  <a class="nav-link" href="{{ url_for('ask_form') }}">Задать вопрос</a>
-  <a class="nav-link is-active" href="{{ url_for('conversations') }}" aria-current="page">Беседы</a>
-{% endblock %}
 
 {% block content %}
   <section class="page-heading" aria-labelledby="page-title">
