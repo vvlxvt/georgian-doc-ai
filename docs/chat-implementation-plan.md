@@ -3,10 +3,10 @@
 ## Status
 
 - Total: 8
-- Done: 3
+- Done: 5
 - In progress: 1
 - Blocked: 0
-- Current: CHAT-04
+- Current: CHAT-06
 
 ## Scope and inspected architecture
 
@@ -77,7 +77,7 @@ Reusable components confirmed in the repository:
 - **ID:** CHAT-04
 - **Title:** Add application service for sending conversation messages
 - **Goal:** Orchestrate bounded follow-up questions scoped to the conversation's document.
-- **Status:** TODO
+- **Status:** DONE
 - **Dependencies:** CHAT-02, CHAT-03
 - **Scope:** Add a chat service that validates conversation/document, stores the user message, loads a configured bounded number of recent turns, derives a retrieval query according to the approved open-decision choice, calls existing RAG with exactly the associated `document_id`, then stores assistant text and validated source references. Keep history separate from evidence and treat it as untrusted. Preserve original question. If rewriting is selected and fails, use the original question. Keep user message on LLM failure and return a typed/error result without persisting a fake assistant response. Do not persist prompts, retrieved text, or model raw responses.
 - **Minimal tests:** Unit tests with fake repository/RAG/LLM collaborators for success, document scoping, history limit, follow-up query, rewrite fallback if implemented, source persistence, missing/deleted conversation, and provider failure behavior.
@@ -88,7 +88,7 @@ Reusable components confirmed in the repository:
 - **ID:** CHAT-05
 - **Title:** Add server-rendered conversation endpoints
 - **Goal:** Expose conversation list/create/view/send/delete workflows through the existing FastAPI application.
-- **Status:** TODO
+- **Status:** DONE
 - **Dependencies:** CHAT-02, CHAT-04
 - **Scope:** Add GET/POST `/conversations`, GET `/conversations/{id}`, POST `/conversations/{id}/messages`, and DELETE `/conversations/{id}` using current request session dependency and thin route handlers. Validate selected document IDs and message length, handle not-found cases, preserve safe provider error mapping, and apply same-origin checks to mutating requests. Keep `/ask` routes unchanged.
 - **Minimal tests:** Extend `tests/test_web.py` for routes, validation, missing/deleted records, service error handling, Origin rejection, and `/ask` regression.

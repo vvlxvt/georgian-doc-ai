@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}Беседа #{{ conversation.id }} — Georgian Document RAG{% endblock %}
+{% block meta_description %}Беседа по документу "{{ document.filename }}".{% endblock %}
+
+{% block navigation %}
+  <a class="nav-link" href="{{ url_for('home') }}">Главная</a>
+  <a class="nav-link" href="{{ url_for('documents') }}">Документы</a>
+  <a class="nav-link" href="{{ url_for('upload_form') }}">Загрузить PDF</a>
+  <a class="nav-link" href="{{ url_for('ask_form') }}">Задать вопрос</a>
+  <a class="nav-link is-active" href="{{ url_for('conversations') }}">Беседы</a>
+{% endblock %}
+
+{% block content %}
+  <section class="page-heading" aria-labelledby="page-title">
+    <p class="eyebrow">Беседа #{{ conversation.id }}</p>
+    <h1 id="page-title">{{ conversation.title or "Без названия" }}</h1>
+    <p class="page-description">
+      Документ: <strong>{{ document.filename }}</strong>
+    </p>
+  </section>
+
+  {% if error %}
+    <div class="alert alert-error" role="alert">{{ error }}</div>
+  {% endif %}
+
+  <div class="conversation-layout">
+    <div class="conversation-main">
+      <div class="message-list" aria-label="История беседы">
+        {% if messages %}
+          {% for message in messages %}
+          <div class="message-card message-{{ message.role }}">
+            <div class="message-header">
+              <span class="message-role">{{ "Вы" if message.role == "user" else "Ассистент" }}</span>
+              <span class="message-time">{{ message.created_at[:16] if message.created_at else "" }}</span>
+            </div>
+            <div class="message-text">{{ message.content }}</div>
+            {% if message.role == "assistant" and message.parsed_sources %}
+              <div class="message-sources">
+                <span class="sources-label">Источники:</span>
+                {% for source in message.parsed_sources %}
+                  <span class="source-chip">[стр. {{ source.page_number }}]</span>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty-conversation">
+            <p>Сообщений ещё нет. Напишите первое сообщение ниже.</p>
+          </div>
+        {% endif %}
+      </div>
+
+      <form
+        class="form-card send-form"
+        action="{{ url_for('send_message', conversation_id=conversation.id) }}"
+        method="post"
+        data-pending-message="Формируем ответ по документу..."
+        data-pending-label="Формируем ответ..."
+      >
+        <div class="form-field">
+          <label for="content">Ваше сообщение</label>
+          <textarea id="content" name="content" rows="3" required>{{ content or "" }}</textarea>
+        </div>
+        <div class="form-actions">
+          <button class="button button-primary" type="submit"><span aria-hidden="true">✳</span> Отправить</button>
+          <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
+        </div>
+      </form>
+
+      {% if rag_result is not none %}
+        <div class="alert alert-info" role="status">
+          <p>Модель: {{ rag_result.model_name or "не определена" }}</p>
+          {% if rag_result.sources %}
+            <p class="sources-label">Использованные страницы:</p>
+            {% for source in rag_result.sources %}
+              <span class="source-chip">[стр. {{ source.page_number }}]</span>
+            {% endfor %}
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+    <aside class="conversation-aside">
+      <h2>Действия</h2>
+      <form
+        action="{{ url_for('delete_conversation', conversation_id=conversation.id) }}"
+        method="post"
+        data-pending-message="Удаление беседы..."
+        data-pending-label="Удаляем беседу..."
+        onsubmit="return confirm('Удалить эту беседу и все её сообщения?');"
+      >
+        <button class="button button-danger" type="submit"><span aria-hidden="true">🗑</span> Удалить беседу</button>
+      </form>
+      <p class="aside-note">
+        Удаление беседы удаляет все её сообщения. Документ остаётся в библиотеке.
+      </p>
+    </aside>
+  </div>
+{% endblock %}

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Беседы — Georgian Document RAG{% endblock %}
+{% block meta_description %}Список хранящихся бесед по документам.{% endblock %}
+
+{% block navigation %}
+  <a class="nav-link" href="{{ url_for('home') }}">Главная</a>
+  <a class="nav-link" href="{{ url_for('documents') }}">Документы</a>
+  <a class="nav-link" href="{{ url_for('upload_form') }}">Загрузить PDF</a>
+  <a class="nav-link" href="{{ url_for('ask_form') }}">Задать вопрос</a>
+  <a class="nav-link is-active" href="{{ url_for('conversations') }}" aria-current="page">Беседы</a>
+{% endblock %}
+
+{% block content %}
+  <section class="page-heading" aria-labelledby="page-title">
+    <p class="eyebrow">Беседы</p>
+    <h1 id="page-title">Хранимые беседы</h1>
+    <p class="page-description">
+      Каждая беседа привязана к одному документу. Внутри беседы можно задавать
+      уточняющие вопросы и получать ответы со ссылками на страницы.
+    </p>
+  </section>
+
+  {% if error %}
+    <div class="alert alert-error" role="alert">{{ error }}</div>
+  {% endif %}
+
+  {% if conversations %}
+    <div class="document-list">
+      <table class="striped-table">
+        <thead>
+          <tr>
+            <th>Документ</th>
+            <th>Беседа</th>
+            <th>Создана</th>
+            <th>Обновлена</th>
+            <th>Действие</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for conversation in conversations %}
+          <tr>
+            <td>{{ conversation.document.filename }}</td>
+            <td>
+              <a href="{{ url_for('conversation_view', conversation_id=conversation.id) }}">{{ conversation.title or "Без названия" }}</a>
+            </td>
+            <td>{{ conversation.created_at[:16] if conversation.created_at else "" }}</td>
+            <td>{{ conversation.updated_at[:16] if conversation.updated_at else "" }}</td>
+            <td>
+              <form
+                action="{{ url_for('delete_conversation', conversation_id=conversation.id) }}"
+                method="post"
+                data-pending-message="Удаление беседы..."
+                data-pending-label="Удаляем беседу..."
+                onsubmit="return confirm('Удалить беседу и все её сообщения?');"
+              >
+                <button class="button button-danger" type="submit"><span aria-hidden="true">🗑</span> Удалить</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="no-documents">
+      <p>Бесед ещё нет. Создайте бежду, выбрав документ на странице «Документы».</p>
+      <a class="text-link" href="{{ url_for('documents') }}">Перейти к документам <span aria-hidden="true">→</span></a>
+    </div>
+  {% endif %}
+{% endblock %}

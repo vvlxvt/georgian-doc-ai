@@ -20,8 +20,14 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.chat import ChatService
 from app.llm import LLMError, LLMErrorCategory
-from app.models import Document, DocumentPage, PageStatus
+from app.models import (
+    Document,
+    DocumentPage,
+    PageStatus,
+)
+from app.repositories import ConversationRepository
 from app.web_dependencies import get_session
 
 PAGE_SIZE = 20
@@ -34,6 +40,23 @@ PAGE_STATUS_LABELS = {
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 MAX_QUESTION_CHARS = 2000
+
+
+def _messages_with_parsed_sources(messages):
+    """Attach parsed source references to messages that have sources_json."""
+    import json as _json
+
+    for message in messages:
+        parsed = None
+        if message.sources_json:
+            try:
+                parsed = _json.loads(message.sources_json)
+            except (_json.JSONDecodeError, TypeError):
+                parsed = None
+        message.parsed_sources = parsed or []
+    return messages
+
+
 ORIGINAL_DOCUMENT_DIRECTORY = Path(__file__).resolve().parents[1] / "data" / "documents"
 INPUT_DOCUMENT_DIRECTORY = Path(__file__).resolve().parents[1] / "data" / "input"
 logger = logging.getLogger(__name__)
@@ -496,6 +519,135 @@ def ask_question(
         },
         status_code=status_code,
     )
+
+
+@router.get("/conversations", name="conversations")
+def conversations_list(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    repository = ConversationRepository(session)
+    conversations = repository.list_all()
+    return templates.TemplateResponse(
+        request=request,
+        name="conversations.html",
+        context={"conversations": conversations},
+    )
+
+
+@router.post("/conversations", name="create_conversation")
+def create_conversation(
+    request: Request,
+    document_id: str = Form(...),
+    session: Session = Depends(get_session),
+):
+    repository = ConversationRepository(session)
+    document = session.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Документ не найден")
+    conversation = repository.create(document_id=document_id)
+    session.commit()
+    return RedirectResponse(
+        url=router.url_path_for("conversation_view", conversation_id=conversation.id),
+        status_code=303,
+    )
+
+
+@router.get("/conversations/{conversation_id}", name="conversation_view")
+def conversation_view(
+    request: Request,
+    conversation_id: str,
+    session: Session = Depends(get_session),
+):
+    repository = ConversationRepository(session)
+    conversation = repository.get(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Беседа не найдена")
+    messages = _messages_with_parsed_sources(conversation.messages)
+    return templates.TemplateResponse(
+        request=request,
+        name="conversation.html",
+        context={
+            "conversation": conversation,
+            "document": conversation.document,
+            "messages": messages,
+            "error": None,
+            "content": "",
+        },
+    )
+
+
+@router.post("/conversations/{conversation_id}/messages", name="send_message")
+def send_message(
+    request: Request,
+    conversation_id: str,
+    content: str = Form(...),
+    session: Session = Depends(get_session),
+):
+    from app.dependencies import create_rag_pipeline
+
+    repository = ConversationRepository(session)
+    conversation = repository.get(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Беседа не найдена")
+
+    content_stripped = content.strip()
+    error = None
+    rag_result = None
+
+    if not content_stripped:
+        error = "Введите сообщение."
+    else:
+        try:
+            chat_service = ChatService(
+                session=session,
+                conversation_repository=repository,
+                rag_pipeline=create_rag_pipeline(),
+            )
+            rag_result = chat_service.send_message(
+                conversation_id=conversation_id,
+                content=content_stripped,
+            )
+            if rag_result.error is not None:
+                error = rag_result.error
+        except Exception:
+            logger.exception("Chat message processing failed")
+            error = "Не удалось отправить сообщение. Проверьте доступность служб."
+
+    # Re-fetch conversation and messages after possible state change
+    conversation = repository.get(conversation_id)
+    messages = (
+        _messages_with_parsed_sources(conversation.messages) if conversation else []
+    )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="conversation.html",
+        context={
+            "conversation": conversation,
+            "document": conversation.document if conversation else None,
+            "messages": messages,
+            "error": error,
+            "content": content,
+            "rag_result": rag_result,
+        },
+        status_code=422 if error and not rag_result else 200,
+    )
+
+
+@router.post("/conversations/{conversation_id}/delete", name="delete_conversation")
+def delete_conversation(
+    request: Request,
+    conversation_id: str,
+    session: Session = Depends(get_session),
+):
+    repository = ConversationRepository(session)
+    conversation = repository.get(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Беседа не найдена")
+    repository.delete(conversation)
+    session.commit()
+    return RedirectResponse(url=router.url_path_for("conversations"), status_code=303)
 
 
 @router.get("/health", name="health")
