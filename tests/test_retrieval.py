@@ -201,3 +201,17 @@ def test_retriever_filters_by_multiple_document_ids():
         "doc-1",
         "doc-3",
     }
+
+
+def test_retriever_returns_no_results_for_empty_document_selection():
+    embedding_service = FakeEmbeddingService()
+    vector_store = FakeVectorStore()
+    vector_store.upsert(
+        vector_id="chunk-1",
+        vector=[1.0, 0.0, 0.0],
+        payload={"document_id": "doc-1", "text": "Text"},
+    )
+    vector_store.items["chunk-1"]["score"] = 1.0
+    retriever = Retriever(embedding_service, vector_store)
+
+    assert retriever.search(query="question", document_ids=[]) == []

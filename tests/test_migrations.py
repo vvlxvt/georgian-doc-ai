@@ -17,6 +17,12 @@ def upgrade_database(database_path: Path) -> None:
     command.upgrade(config, "head")
 
 
+def migration_config(database_path: Path) -> Config:
+    config = Config(str(PROJECT_ROOT / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{database_path.as_posix()}")
+    return config
+
+
 def test_migration_upgrades_legacy_schema_with_document_chunks(tmp_path):
     database_path = tmp_path / "legacy.db"
     engine = create_engine(f"sqlite:///{database_path}")
@@ -51,8 +57,91 @@ def test_migration_upgrades_legacy_schema_with_document_chunks(tmp_path):
         for index in indexes
     )
 
-    conversation_foreign_keys = inspector.get_foreign_keys("conversations")
-    assert conversation_foreign_keys[0]["options"]["ondelete"] == "CASCADE"
+    assert "document_id" not in {
+        column["name"] for column in inspector.get_columns("conversations")
+    }
+    association_foreign_keys = inspector.get_foreign_keys("conversation_documents")
+    assert {key["options"]["ondelete"] for key in association_foreign_keys} == {
+        "CASCADE"
+    }
+
+
+def test_migration_moves_existing_conversation_document_to_association_table(
+    tmp_path,
+):
+    database_path = tmp_path / "conversations.db"
+    engine = create_engine(f"sqlite:///{database_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE documents ("
+                "id VARCHAR(36) PRIMARY KEY, filename VARCHAR(255) NOT NULL, "
+                "file_hash VARCHAR(64) NOT NULL UNIQUE, created_at DATETIME NOT NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO documents (id, filename, file_hash, created_at) "
+                "VALUES ('doc-1', 'contract.pdf', 'hash', '2026-11-07')"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE TABLE conversations ("
+                "id VARCHAR(36) PRIMARY KEY, document_id VARCHAR(36) NOT NULL, "
+                "title VARCHAR(255) NOT NULL, created_at DATETIME NOT NULL, "
+                "updated_at DATETIME NOT NULL, "
+                "FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO conversations "
+                "(id, document_id, title, created_at, updated_at) "
+                "VALUES ('conv-1', 'doc-1', 'Existing', '2026-11-07', '2026-11-07')"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX ix_conversations_document_id "
+                "ON conversations(document_id)"
+            )
+        )
+
+    upgrade_database(database_path)
+
+    with engine.connect() as connection:
+        assert connection.execute(
+            text("SELECT conversation_id, document_id FROM conversation_documents")
+        ).one() == ("conv-1", "doc-1")
+
+    command.downgrade(migration_config(database_path), "20261104_01")
+
+    inspector = inspect(engine)
+    conversation_columns = {
+        column["name"] for column in inspector.get_columns("conversations")
+    }
+    assert "document_id" in conversation_columns
+    document_id_column = next(
+        column
+        for column in inspector.get_columns("conversations")
+        if column["name"] == "document_id"
+    )
+    assert document_id_column["nullable"] is False
+    restored_foreign_keys = inspector.get_foreign_keys("conversations")
+    assert restored_foreign_keys[0]["options"]["ondelete"] == "CASCADE"
+    assert "conversation_documents" not in inspector.get_table_names()
+    assert any(
+        index["name"] == "ix_conversations_document_id"
+        for index in inspector.get_indexes("conversations")
+    )
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT document_id FROM conversations WHERE id = 'conv-1'")
+            ).scalar_one()
+            == "doc-1"
+        )
 
 
 def test_page_number_is_unique_within_a_document(session):

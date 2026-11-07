@@ -27,13 +27,13 @@ class ChatSendResult:
 
 
 class ChatService:
-    """Orchestrates a document-scoped conversation turn.
+    """Orchestrates a multi-document conversation turn.
 
     Responsibilities:
-      * validate conversation and its document,
+      * validate the conversation and its selected documents,
       * persist the user message,
       * load a bounded number of recent turns (history, kept out of evidence),
-      * call the existing RAG pipeline scoped to the conversation's document,
+      * call the existing RAG pipeline scoped to the conversation's documents,
       * persist the assistant answer together with validated source references.
 
     Source text and prompts are never persisted.
@@ -60,7 +60,7 @@ class ChatService:
         if conversation is None:
             raise ValueError(f"Conversation '{conversation_id}' not found")
 
-        document_id = conversation.document_id
+        document_ids = [document.id for document in conversation.documents]
 
         # Persist the user message first: it survives even if the LLM call fails.
         user_message = self.conversation_repository.add_message(
@@ -82,7 +82,7 @@ class ChatService:
         try:
             answer_result: ChatAnswerResult = self.rag_pipeline.answer_with_sources(
                 question=retrieval_query,
-                document_id=document_id,
+                document_ids=document_ids,
             )
         except Exception as exc:
             # LLM failure: keep the user message, do not fabricate an assistant answer.

@@ -148,16 +148,16 @@ On startup, the application also ensures keyword payload indexes for `document_i
 
 ## Chat
 
-The web UI adds a document-scoped chat on top of the one-shot `/ask` workflow.
-Conversations are stored in SQLite and each conversation is tied to a single
-document. Follow-up questions retrieve context only from that document's
-indexed chunks.
+The web UI adds persistent multi-document conversations on top of the one-shot
+`/ask` workflow. Conversations and messages are stored in SQLite, and each
+conversation can be associated with one or more documents. Follow-up questions
+retrieve context only from the selected documents' indexed chunks.
 
 ### Chat workflows
 
-1. **Create a conversation:** On the Documents page, select a document and
-   create a conversation from it. The conversation inherits the document's
-   language and content scope.
+1. **Create a conversation:** On the Conversations page, select one or more
+   documents and create a conversation. Its search scope is limited to those
+   documents.
 2. **Send a message:** Open the conversation, type your question in Russian,
    and submit. The answer includes `[стр. N]` citations backed by the
    retrieved chunks.
@@ -171,7 +171,7 @@ indexed chunks.
 | Route | Method | Description |
 |---|---|---|
 | `/conversations` | GET | List all conversations with their documents |
-| `/conversations` | POST | Create a conversation from a document (`document_id` form field) |
+| `/conversations` | POST | Create a conversation from selected documents (`document_ids` form fields) |
 | `/conversations/{id}` | GET | View a conversation with message history |
 | `/conversations/{id}/messages` | POST | Send a message in a conversation (`content` form field) |
 | `/conversations/{id}/delete` | POST | Delete a conversation and all its messages |
@@ -192,10 +192,9 @@ indexed chunks.
 
 - Conversation titles are not auto-generated; they default to "New
   conversation".
-- There is no per-document RAG selection within a conversation; retrieval is
-  always scoped to the conversation's document.
-- Deleting a document cascades to its conversations and messages (ORM
-  `delete-orphan`), and Qdrant vectors are removed before the SQL commit.
+- Deleting a document removes its association with conversations but preserves
+  their messages and any associations with other documents. Qdrant vectors are
+  removed before the SQL commit.
 
 ## Migrations
 

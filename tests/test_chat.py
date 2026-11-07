@@ -3,7 +3,7 @@ import pytest
 from app.answer import ChatAnswerResult
 from app.chat import ChatSendResult, ChatService
 from app.context import SourceReference
-from app.models import Conversation, Message, MessageRole
+from app.models import Conversation, Document, Message, MessageRole
 from app.repositories import ConversationRepository
 
 
@@ -13,8 +13,8 @@ class FakeRAGPipeline:
         self.should_fail = should_fail
         self.calls = []
 
-    def answer_with_sources(self, question: str, document_id: str = None, **kwargs):
-        self.calls.append((question, document_id))
+    def answer_with_sources(self, question: str, document_ids=None, **kwargs):
+        self.calls.append((question, document_ids))
         if self.should_fail:
             raise RuntimeError("LLM provider unavailable")
         return ChatAnswerResult(
@@ -56,8 +56,18 @@ class FakeConversationRepository(ConversationRepository):
         return []
 
 
-def make_conversation(conversation_id: str, document_id: str) -> Conversation:
-    return Conversation(id=conversation_id, document_id=document_id)
+def make_conversation(conversation_id: str, *document_ids: str) -> Conversation:
+    return Conversation(
+        id=conversation_id,
+        documents=[
+            Document(
+                id=document_id,
+                filename=f"{document_id}.pdf",
+                file_hash=document_id.ljust(64, "0"),
+            )
+            for document_id in document_ids
+        ],
+    )
 
 
 def test_send_message_persists_user_and_assistant(session):
@@ -90,9 +100,9 @@ def test_send_message_persists_user_and_assistant(session):
     assert sources_data[0]["page_number"] == 1
 
 
-def test_send_message_rag_scoped_to_conversation_document(session):
+def test_send_message_rag_scoped_to_conversation_documents(session):
     repository = FakeConversationRepository(session)
-    conversation = make_conversation("conv-1", "doc-42")
+    conversation = make_conversation("conv-1", "doc-42", "doc-43")
     repository._conversations["conv-1"] = conversation
     session.add(conversation)
     session.commit()
@@ -103,9 +113,9 @@ def test_send_message_rag_scoped_to_conversation_document(session):
     service.send_message("conv-1", "Каков срок?")
 
     assert len(rag.calls) == 1
-    question, document_id = rag.calls[0]
+    question, document_ids = rag.calls[0]
     assert question == "Каков срок?"
-    assert document_id == "doc-42"
+    assert document_ids == ["doc-42", "doc-43"]
 
 
 def test_send_message_conversation_not_found(session):

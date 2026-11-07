@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}Беседа #{{ conversation.id }} — Georgian Document RAG{% endblock %}
-{% block meta_description %}Беседа по документу "{{ document.filename }}".{% endblock %}
+{% block meta_description %}Беседа по выбранным документам.{% endblock %}
 
 
 {% block content %}
@@ -9,7 +9,12 @@
     <p class="eyebrow">Беседа #{{ conversation.id }}</p>
     <h1 id="page-title">{{ conversation.title or "Без названия" }}</h1>
     <p class="page-description">
-      Документ: <strong>{{ document.filename }}</strong>
+      Документы:
+      {% for document in conversation.documents %}
+        <strong>{{ document.filename }}</strong>{% if not loop.last %}, {% endif %}
+      {% else %}
+        <span>Документы не выбраны или удалены.</span>
+      {% endfor %}
     </p>
   </section>
 
@@ -49,7 +54,7 @@
         class="form-card send-form"
         action="{{ url_for('send_message', conversation_id=conversation.id) }}"
         method="post"
-        data-pending-message="Формируем ответ по документу..."
+        data-pending-message="Формируем ответ по выбранным документам..."
         data-pending-label="Формируем ответ..."
       >
         <div class="form-field">

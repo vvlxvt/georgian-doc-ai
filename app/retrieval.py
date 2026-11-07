@@ -34,6 +34,9 @@ class Retriever:
         if limit < 1:
             raise ValueError("limit must be greater than 0")
 
+        if document_ids == []:
+            return []
+
         vector = self.embedding_service.embed(query)
 
         if document_ids is None:

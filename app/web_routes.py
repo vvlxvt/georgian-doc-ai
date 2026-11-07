@@ -539,27 +539,35 @@ def conversations_list(
 ):
     repository = ConversationRepository(session)
     conversations = repository.list_all()
+    documents = session.scalars(
+        select(Document).order_by(Document.filename, Document.id)
+    ).all()
     for conversation in conversations:
         conversation.created_at_display = _format_datetime(conversation.created_at)
         conversation.updated_at_display = _format_datetime(conversation.updated_at)
     return templates.TemplateResponse(
         request=request,
         name="conversations.html",
-        context={"conversations": conversations},
+        context={"conversations": conversations, "documents": documents},
     )
 
 
 @router.post("/conversations", name="create_conversation")
 def create_conversation(
     request: Request,
-    document_id: str = Form(...),
+    document_ids: list[str] = Form(default=[]),
     session: Session = Depends(get_session),
 ):
     repository = ConversationRepository(session)
-    document = session.get(Document, document_id)
-    if document is None:
-        raise HTTPException(status_code=404, detail="Документ не найден")
-    conversation = repository.create(document_id=document_id)
+    if not document_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="Выберите хотя бы один документ для беседы",
+        )
+    try:
+        conversation = repository.create(document_ids=document_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Документ не найден") from exc
     session.commit()
     return RedirectResponse(
         url=router.url_path_for("conversation_view", conversation_id=conversation.id),
@@ -583,7 +591,6 @@ def conversation_view(
         name="conversation.html",
         context={
             "conversation": conversation,
-            "document": conversation.document,
             "messages": messages,
             "error": None,
             "content": "",
@@ -640,7 +647,6 @@ def send_message(
         name="conversation.html",
         context={
             "conversation": conversation,
-            "document": conversation.document if conversation else None,
             "messages": messages,
             "error": error,
             "content": content,

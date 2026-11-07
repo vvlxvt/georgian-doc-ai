@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import Conversation, DocumentChunk, Message, MessageRole
+from app.models import Conversation, Document, DocumentChunk, Message, MessageRole
 
 
 class DocumentChunkRepository:
@@ -79,8 +79,26 @@ class ConversationRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def create(self, document_id: str, title: str = "New conversation") -> Conversation:
-        conversation = Conversation(document_id=document_id, title=title)
+    def create(
+        self,
+        document_ids: list[str],
+        title: str = "New conversation",
+    ) -> Conversation:
+        selected_ids = list(dict.fromkeys(document_ids))
+        if not selected_ids:
+            raise ValueError("at least one document must be selected")
+
+        documents = self.session.scalars(
+            select(Document).where(Document.id.in_(selected_ids))
+        ).all()
+        documents_by_id = {document.id: document for document in documents}
+        if len(documents_by_id) != len(selected_ids):
+            raise ValueError("one or more selected documents were not found")
+
+        conversation = Conversation(
+            documents=[documents_by_id[document_id] for document_id in selected_ids],
+            title=title,
+        )
         self.session.add(conversation)
         self.session.flush()
         return conversation
@@ -88,14 +106,15 @@ class ConversationRepository:
     def list_for_document(self, document_id: str) -> list[Conversation]:
         return self.session.scalars(
             select(Conversation)
-            .where(Conversation.document_id == document_id)
+            .where(Conversation.documents.any(Document.id == document_id))
+            .options(selectinload(Conversation.documents))
             .order_by(Conversation.updated_at.desc(), Conversation.id.desc())
         ).all()
 
     def list_all(self) -> list[Conversation]:
         return self.session.scalars(
             select(Conversation)
-            .options(selectinload(Conversation.document))
+            .options(selectinload(Conversation.documents))
             .order_by(Conversation.updated_at.desc(), Conversation.id.desc())
         ).all()
 
@@ -103,7 +122,7 @@ class ConversationRepository:
         return self.session.scalar(
             select(Conversation)
             .options(
-                selectinload(Conversation.document),
+                selectinload(Conversation.documents),
                 selectinload(Conversation.messages),
             )
             .where(Conversation.id == conversation_id)

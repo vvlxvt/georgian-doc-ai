@@ -2,12 +2,39 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
     pass
+
+
+conversation_documents = Table(
+    "conversation_documents",
+    Base.metadata,
+    Column(
+        "conversation_id",
+        String(36),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "document_id",
+        String(36),
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
 
 
 class PageStatus(StrEnum):
@@ -45,8 +72,8 @@ class Document(Base):
     )
 
     conversations: Mapped[list["Conversation"]] = relationship(
-        back_populates="document",
-        cascade="all, delete-orphan",
+        secondary=conversation_documents,
+        back_populates="documents",
     )
 
 
@@ -146,11 +173,6 @@ class Conversation(Base):
         default=lambda: str(uuid4()),
     )
 
-    document_id: Mapped[str] = mapped_column(
-        ForeignKey("documents.id", ondelete="CASCADE"),
-        index=True,
-    )
-
     title: Mapped[str] = mapped_column(
         String(255),
         default="New conversation",
@@ -167,7 +189,8 @@ class Conversation(Base):
         onupdate=lambda: datetime.now(UTC),
     )
 
-    document: Mapped[Document] = relationship(
+    documents: Mapped[list[Document]] = relationship(
+        secondary=conversation_documents,
         back_populates="conversations",
     )
 

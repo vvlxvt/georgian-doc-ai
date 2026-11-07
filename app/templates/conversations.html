@@ -9,10 +9,33 @@
     <p class="eyebrow">Беседы</p>
     <h1 id="page-title">Хранимые беседы</h1>
     <p class="page-description">
-      Каждая беседа привязана к одному документу. Внутри беседы можно задавать
-      уточняющие вопросы и получать ответы со ссылками на страницы.
+      Выберите один или несколько документов для беседы. Ответы будут основаны
+      только на найденных фрагментах выбранных документов.
     </p>
   </section>
+
+  <form class="form-card" action="{{ url_for('create_conversation') }}" method="post">
+    <fieldset class="document-filter">
+      <legend class="filter-heading">Документы для новой беседы</legend>
+      {% if documents %}
+        <div class="document-options">
+          {% for document in documents %}
+            <label class="document-option">
+              <input type="checkbox" name="document_ids" value="{{ document.id }}">
+              <span class="document-option-name">{{ document.filename }}</span>
+              <span class="document-option-check" aria-hidden="true">✓</span>
+            </label>
+          {% endfor %}
+        </div>
+        <div class="form-actions">
+          <button class="button button-primary" type="submit">Создать беседу</button>
+        </div>
+      {% else %}
+        <p class="field-help">Сначала загрузите документ для начала беседы.</p>
+        <a class="text-link" href="{{ url_for('upload_form') }}">Загрузить PDF</a>
+      {% endif %}
+    </fieldset>
+  </form>
 
   {% if error %}
     <div class="alert alert-error" role="alert">{{ error }}</div>
@@ -23,7 +46,7 @@
       <table class="striped-table">
         <thead>
           <tr>
-            <th>Документ</th>
+            <th>Документы</th>
             <th>Беседа</th>
             <th>Создана</th>
             <th>Обновлена</th>
@@ -33,7 +56,13 @@
         <tbody>
           {% for conversation in conversations %}
           <tr>
-            <td>{{ conversation.document.filename }}</td>
+            <td>
+              {% for document in conversation.documents %}
+                {{ document.filename }}{% if not loop.last %}, {% endif %}
+              {% else %}
+                Нет доступных документов
+              {% endfor %}
+            </td>
             <td>
               <a href="{{ url_for('conversation_view', conversation_id=conversation.id) }}">{{ conversation.title or "Без названия" }}</a>
             </td>
@@ -57,8 +86,7 @@
     </div>
   {% else %}
     <div class="no-documents">
-      <p>Бесед ещё нет. Создайте бежду, выбрав документ на странице «Документы».</p>
-      <a class="text-link" href="{{ url_for('documents') }}">Перейти к документам <span aria-hidden="true">→</span></a>
+      <p>Бесед ещё нет. Выберите документы выше, чтобы создать первую беседу.</p>
     </div>
   {% endif %}
 {% endblock %}

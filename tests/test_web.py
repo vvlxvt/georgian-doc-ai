@@ -844,7 +844,7 @@ def add_web_conversation(
 
         conversation = Conversation(
             id=document_id,
-            document_id=document.id,
+            documents=[document],
             title=title,
         )
         session.add(conversation)
@@ -876,6 +876,38 @@ def test_conversations_list_renders_existing(web_session_factory):
 
     assert response.status_code == 200
     assert "document.pdf" in response.text
+
+
+def test_create_conversation_with_multiple_documents(web_session_factory):
+    with web_session_factory() as session:
+        first = Document(filename="first.pdf", file_hash="1" * 64)
+        second = Document(filename="second.pdf", file_hash="2" * 64)
+        session.add_all([first, second])
+        session.commit()
+        document_ids = [first.id, second.id]
+
+    application = create_app(session_factory=web_session_factory)
+    with TestClient(application) as client:
+        response = client.post(
+            "/conversations",
+            data={"document_ids": document_ids},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    with web_session_factory() as session:
+        from app.models import Conversation
+
+        conversation = session.query(Conversation).one()
+        assert {document.id for document in conversation.documents} == set(document_ids)
+
+
+def test_create_conversation_requires_at_least_one_document(web_session_factory):
+    application = create_app(session_factory=web_session_factory)
+    with TestClient(application) as client:
+        response = client.post("/conversations", data={})
+
+    assert response.status_code == 422
 
 
 def test_conversation_view_returns_404_for_missing(web_session_factory):
@@ -989,16 +1021,20 @@ def test_conversation_list_link_in_navigation(web_session_factory):
     assert "Беседы" in response.text
 
 
-def test_delete_document_cascades_to_conversations_and_messages(
+def test_delete_document_preserves_multi_document_conversation_and_messages(
     web_session_factory, monkeypatch
 ):
     with web_session_factory() as session:
         document = Document(filename="document.pdf", file_hash="e" * 64)
-        session.add(document)
+        other_document = Document(filename="other.pdf", file_hash="f" * 64)
+        session.add_all([document, other_document])
         session.flush()
         from app.models import Conversation, Message, MessageRole
 
-        conversation = Conversation(document_id=document.id, title="Test")
+        conversation = Conversation(
+            documents=[document, other_document],
+            title="Test",
+        )
         session.add(conversation)
         session.flush()
         message = Message(
@@ -1009,6 +1045,7 @@ def test_delete_document_cascades_to_conversations_and_messages(
         session.add(message)
         session.commit()
         document_id = document.id
+        other_document_id = other_document.id
         conversation_id = conversation.id
         message_id = message.id
 
@@ -1054,8 +1091,12 @@ def test_delete_document_cascades_to_conversations_and_messages(
         from app.models import Conversation, Message
 
         assert session.get(Document, document_id) is None
-        assert session.get(Conversation, conversation_id) is None
-        assert session.get(Message, message_id) is None
+        saved_conversation = session.get(Conversation, conversation_id)
+        assert saved_conversation is not None
+        assert [document.id for document in saved_conversation.documents] == [
+            other_document_id
+        ]
+        assert session.get(Message, message_id) is not None
 
 
 def test_delete_conversation_cascades_to_messages(web_session_factory):
