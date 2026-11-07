@@ -25,11 +25,16 @@
         </a>
         <nav class="site-nav" aria-label="Основная навигация">
           {% set current_path = request.url.path %}
-          <a class="nav-link{% if current_path == '/' %} is-active{% endif %}" href="{{ url_for('home') }}" {% if current_path == '/' %}aria-current="page"{% endif %}>Главная</a>
-          <a class="nav-link{% if current_path == url_for('documents') or current_path == url_for('documents') | string %} is-active{% endif %}" href="{{ url_for('documents') }}" {% if current_path == url_for('documents') or current_path == url_for('documents') | string %}aria-current="page"{% endif %}>Документы</a>
-          <a class="nav-link{% if current_path == url_for('upload_form') or current_path == url_for('upload_form') | string %} is-active{% endif %}" href="{{ url_for('upload_form') }}" {% if current_path == url_for('upload_form') or current_path == url_for('upload_form') | string %}aria-current="page"{% endif %}>Загрузить PDF</a>
-          <a class="nav-link{% if current_path == url_for('ask_form') or current_path == url_for('ask_form') | string %} is-active{% endif %}" href="{{ url_for('ask_form') }}" {% if current_path == url_for('ask_form') or current_path == url_for('ask_form') | string %}aria-current="page"{% endif %}>Задать вопрос</a>
-          <a class="nav-link{% if current_path == url_for('conversations') or current_path.startswith(url_for('conversations') | string + '/') %} is-active{% endif %}" href="{{ url_for('conversations') }}" {% if current_path == url_for('conversations') or current_path.startswith(url_for('conversations') | string + '/') %}aria-current="page"{% endif %}>Беседы</a>
+          {% set home_url = url_for('home') %}
+          {% set documents_url = url_for('documents') %}
+          {% set upload_url = url_for('upload_form') %}
+          {% set ask_url = url_for('ask_form') %}
+          {% set conversations_url = url_for('conversations') %}
+          <a class="nav-link{% if current_path == home_url.path %} is-active{% endif %}" href="{{ home_url }}" {% if current_path == home_url.path %}aria-current="page"{% endif %}>Главная</a>
+          <a class="nav-link{% if current_path == documents_url.path or current_path.startswith(documents_url.path + '/') %} is-active{% endif %}" href="{{ documents_url }}" {% if current_path == documents_url.path or current_path.startswith(documents_url.path + '/') %}aria-current="page"{% endif %}>Документы</a>
+          <a class="nav-link{% if current_path == upload_url.path %} is-active{% endif %}" href="{{ upload_url }}" {% if current_path == upload_url.path %}aria-current="page"{% endif %}>Загрузить PDF</a>
+          <a class="nav-link{% if current_path == ask_url.path %} is-active{% endif %}" href="{{ ask_url }}" {% if current_path == ask_url.path %}aria-current="page"{% endif %}>Задать вопрос</a>
+          <a class="nav-link{% if current_path == conversations_url.path or current_path.startswith(conversations_url.path + '/') %} is-active{% endif %}" href="{{ conversations_url }}" {% if current_path == conversations_url.path or current_path.startswith(conversations_url.path + '/') %}aria-current="page"{% endif %}>Беседы</a>
         </nav>
         <div class="sidebar-note">
           <span class="sidebar-note-mark" aria-hidden="true">✓</span>
