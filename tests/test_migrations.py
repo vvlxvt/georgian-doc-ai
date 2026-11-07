@@ -48,9 +48,12 @@ def test_migration_upgrades_legacy_schema_with_document_chunks(tmp_path):
     upgrade_database(database_path)
 
     inspector = inspect(engine)
-    assert {"document_chunks", "conversations", "messages"}.issubset(
-        inspector.get_table_names()
-    )
+    assert {
+        "document_chunks",
+        "chats",
+        "chat_documents",
+        "messages",
+    }.issubset(inspector.get_table_names())
     indexes = inspector.get_indexes("document_pages")
     assert any(
         index["name"] == "uq_document_pages_document_id_page_number" and index["unique"]
@@ -58,18 +61,29 @@ def test_migration_upgrades_legacy_schema_with_document_chunks(tmp_path):
     )
 
     assert "document_id" not in {
-        column["name"] for column in inspector.get_columns("conversations")
+        column["name"] for column in inspector.get_columns("chats")
     }
-    association_foreign_keys = inspector.get_foreign_keys("conversation_documents")
+    association_foreign_keys = inspector.get_foreign_keys("chat_documents")
     assert {key["options"]["ondelete"] for key in association_foreign_keys} == {
         "CASCADE"
     }
+    chat_title = next(
+        column for column in inspector.get_columns("chats") if column["name"] == "title"
+    )
+    assert chat_title["default"].strip("'\"") == "New chat"
+    message_foreign_keys = inspector.get_foreign_keys("messages")
+    assert any(
+        key["referred_table"] == "chats" and key["constrained_columns"] == ["chat_id"]
+        for key in message_foreign_keys
+    )
+    assert any(
+        index["name"] == "ix_messages_chat_id"
+        for index in inspector.get_indexes("messages")
+    )
 
 
-def test_migration_moves_existing_conversation_document_to_association_table(
-    tmp_path,
-):
-    database_path = tmp_path / "conversations.db"
+def test_chat_migration_renames_legacy_schema_and_preserves_data(tmp_path):
+    database_path = tmp_path / "chats.db"
     engine = create_engine(f"sqlite:///{database_path}")
     with engine.begin() as connection:
         connection.execute(
@@ -98,7 +112,8 @@ def test_migration_moves_existing_conversation_document_to_association_table(
             text(
                 "INSERT INTO conversations "
                 "(id, document_id, title, created_at, updated_at) "
-                "VALUES ('conv-1', 'doc-1', 'Existing', '2026-11-07', '2026-11-07')"
+                "VALUES ('conv-1', 'doc-1', 'New conversation', "
+                "'2026-11-07', '2026-11-07')"
             )
         )
         connection.execute(
@@ -108,20 +123,39 @@ def test_migration_moves_existing_conversation_document_to_association_table(
             )
         )
 
-    upgrade_database(database_path)
+    config = migration_config(database_path)
+    command.upgrade(config, "20261107_01")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO messages "
+                "(id, conversation_id, role, content, created_at) "
+                "VALUES ('msg-1', 'conv-1', 'user', 'Question', '2026-11-07')"
+            )
+        )
+    command.upgrade(config, "head")
 
     with engine.connect() as connection:
         assert connection.execute(
-            text("SELECT conversation_id, document_id FROM conversation_documents")
+            text("SELECT chat_id, document_id FROM chat_documents")
         ).one() == ("conv-1", "doc-1")
+        assert connection.execute(
+            text("SELECT chat_id, content FROM messages WHERE id = 'msg-1'")
+        ).one() == ("conv-1", "Question")
+        assert (
+            connection.execute(
+                text("SELECT title FROM chats WHERE id = 'conv-1'")
+            ).scalar_one()
+            == "New chat"
+        )
 
-    command.downgrade(migration_config(database_path), "20261104_01")
+    command.downgrade(config, "20261104_01")
 
     inspector = inspect(engine)
-    conversation_columns = {
+    legacy_chat_columns = {
         column["name"] for column in inspector.get_columns("conversations")
     }
-    assert "document_id" in conversation_columns
+    assert "document_id" in legacy_chat_columns
     document_id_column = next(
         column
         for column in inspector.get_columns("conversations")
@@ -142,6 +176,15 @@ def test_migration_moves_existing_conversation_document_to_association_table(
             ).scalar_one()
             == "doc-1"
         )
+        assert (
+            connection.execute(
+                text("SELECT title FROM conversations WHERE id = 'conv-1'")
+            ).scalar_one()
+            == "New conversation"
+        )
+        assert connection.execute(
+            text("SELECT conversation_id, content FROM messages WHERE id = 'msg-1'")
+        ).one() == ("conv-1", "Question")
 
 
 def test_page_number_is_unique_within_a_document(session):

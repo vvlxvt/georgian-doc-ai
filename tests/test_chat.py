@@ -3,8 +3,8 @@ import pytest
 from app.answer import ChatAnswerResult
 from app.chat import ChatSendResult, ChatService
 from app.context import SourceReference
-from app.models import Conversation, Document, Message, MessageRole
-from app.repositories import ConversationRepository
+from app.models import Chat, Document, Message, MessageRole
+from app.repositories import ChatRepository
 
 
 class FakeRAGPipeline:
@@ -30,20 +30,20 @@ class FakeRAGPipeline:
         )
 
 
-class FakeConversationRepository(ConversationRepository):
-    def __init__(self, session, conversations=None):
+class FakeChatRepository(ChatRepository):
+    def __init__(self, session, chats=None):
         super().__init__(session)
-        self._conversations = conversations or {}
+        self._chats = chats or {}
         self.added_messages = []
         self.recent_calls = []
 
-    def get(self, conversation_id: str):
-        return self._conversations.get(conversation_id)
+    def get(self, chat_id: str):
+        return self._chats.get(chat_id)
 
-    def add_message(self, conversation_id, role, content, sources_json=None):
+    def add_message(self, chat_id, role, content, sources_json=None):
         message = Message(
             id=f"msg-{len(self.added_messages)}",
-            conversation_id=conversation_id,
+            chat_id=chat_id,
             role=role,
             content=content,
             sources_json=sources_json,
@@ -51,14 +51,14 @@ class FakeConversationRepository(ConversationRepository):
         self.added_messages.append(message)
         return message
 
-    def get_recent_messages(self, conversation_id: str, limit: int):
-        self.recent_calls.append((conversation_id, limit))
+    def get_recent_messages(self, chat_id: str, limit: int):
+        self.recent_calls.append((chat_id, limit))
         return []
 
 
-def make_conversation(conversation_id: str, *document_ids: str) -> Conversation:
-    return Conversation(
-        id=conversation_id,
+def make_chat(chat_id: str, *document_ids: str) -> Chat:
+    return Chat(
+        id=chat_id,
         documents=[
             Document(
                 id=document_id,
@@ -71,16 +71,16 @@ def make_conversation(conversation_id: str, *document_ids: str) -> Conversation:
 
 
 def test_send_message_persists_user_and_assistant(session):
-    repository = FakeConversationRepository(session)
-    conversation = make_conversation("conv-1", "doc-1")
-    repository._conversations["conv-1"] = conversation
-    session.add(conversation)
+    repository = FakeChatRepository(session)
+    chat = make_chat("chat-1", "doc-1")
+    repository._chats["chat-1"] = chat
+    session.add(chat)
     session.commit()
 
     rag = FakeRAGPipeline()
     service = ChatService(session, repository, rag)
 
-    result = service.send_message("conv-1", "Вопрос про договор")
+    result = service.send_message("chat-1", "Вопрос про договор")
 
     assert isinstance(result, ChatSendResult)
     assert result.error is None
@@ -100,17 +100,17 @@ def test_send_message_persists_user_and_assistant(session):
     assert sources_data[0]["page_number"] == 1
 
 
-def test_send_message_rag_scoped_to_conversation_documents(session):
-    repository = FakeConversationRepository(session)
-    conversation = make_conversation("conv-1", "doc-42", "doc-43")
-    repository._conversations["conv-1"] = conversation
-    session.add(conversation)
+def test_send_message_rag_scoped_to_chat_documents(session):
+    repository = FakeChatRepository(session)
+    chat = make_chat("chat-1", "doc-42", "doc-43")
+    repository._chats["chat-1"] = chat
+    session.add(chat)
     session.commit()
 
     rag = FakeRAGPipeline()
     service = ChatService(session, repository, rag)
 
-    service.send_message("conv-1", "Каков срок?")
+    service.send_message("chat-1", "Каков срок?")
 
     assert len(rag.calls) == 1
     question, document_ids = rag.calls[0]
@@ -118,8 +118,8 @@ def test_send_message_rag_scoped_to_conversation_documents(session):
     assert document_ids == ["doc-42", "doc-43"]
 
 
-def test_send_message_conversation_not_found(session):
-    repository = FakeConversationRepository(session)
+def test_send_message_chat_not_found(session):
+    repository = FakeChatRepository(session)
     rag = FakeRAGPipeline()
     service = ChatService(session, repository, rag)
 
@@ -128,25 +128,25 @@ def test_send_message_conversation_not_found(session):
 
 
 def test_send_message_empty_content_raises(session):
-    repository = FakeConversationRepository(session)
+    repository = FakeChatRepository(session)
     rag = FakeRAGPipeline()
     service = ChatService(session, repository, rag)
 
     with pytest.raises(ValueError, match="must not be empty"):
-        service.send_message("conv-1", "   ")
+        service.send_message("chat-1", "   ")
 
 
 def test_send_message_llm_failure_keeps_user_message(session):
-    repository = FakeConversationRepository(session)
-    conversation = make_conversation("conv-1", "doc-1")
-    repository._conversations["conv-1"] = conversation
-    session.add(conversation)
+    repository = FakeChatRepository(session)
+    chat = make_chat("chat-1", "doc-1")
+    repository._chats["chat-1"] = chat
+    session.add(chat)
     session.commit()
 
     rag = FakeRAGPipeline(should_fail=True)
     service = ChatService(session, repository, rag)
 
-    result = service.send_message("conv-1", "Вопрос после сбоя")
+    result = service.send_message("chat-1", "Вопрос после сбоя")
 
     assert result.error is not None
     assert "LLM provider unavailable" in result.error
@@ -158,16 +158,16 @@ def test_send_message_llm_failure_keeps_user_message(session):
 
 
 def test_send_message_loads_bounded_history(session):
-    repository = FakeConversationRepository(session)
-    conversation = make_conversation("conv-1", "doc-1")
-    repository._conversations["conv-1"] = conversation
-    session.add(conversation)
+    repository = FakeChatRepository(session)
+    chat = make_chat("chat-1", "doc-1")
+    repository._chats["chat-1"] = chat
+    session.add(chat)
     session.commit()
 
     rag = FakeRAGPipeline()
     service = ChatService(session, repository, rag, max_history_turns=3)
 
-    service.send_message("conv-1", "Вопрос")
+    service.send_message("chat-1", "Вопрос")
 
     assert len(repository.recent_calls) == 1
     _, limit = repository.recent_calls[0]

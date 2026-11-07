@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}Беседа #{{ conversation.id }} — Georgian Document RAG{% endblock %}
-{% block meta_description %}Беседа по выбранным документам.{% endblock %}
+{% block title %}Чат #{{ chat.id }} — Georgian Document RAG{% endblock %}
+{% block meta_description %}Чат по выбранным документам.{% endblock %}
 
 
 {% block content %}
   <section class="page-heading" aria-labelledby="page-title">
-    <p class="eyebrow">Беседа #{{ conversation.id }}</p>
-    <h1 id="page-title">{{ conversation.title or "Без названия" }}</h1>
+    <p class="eyebrow">Чат #{{ chat.id }}</p>
+    <h1 id="page-title">{{ chat.title or "Без названия" }}</h1>
     <p class="page-description">
       Документы:
-      {% for document in conversation.documents %}
+      {% for document in chat.documents %}
         <strong>{{ document.filename }}</strong>{% if not loop.last %}, {% endif %}
       {% else %}
         <span>Документы не выбраны или удалены.</span>
@@ -22,9 +22,9 @@
     <div class="alert alert-error" role="alert">{{ error }}</div>
   {% endif %}
 
-  <div class="conversation-layout">
-    <div class="conversation-main">
-      <div class="message-list" aria-label="История беседы">
+  <div class="chat-layout">
+    <div class="chat-main">
+      <div class="message-list" aria-label="История чата">
         {% if messages %}
           {% for message in messages %}
           <div class="message-card message-{{ message.role }}">
@@ -44,7 +44,7 @@
           </div>
           {% endfor %}
         {% else %}
-          <div class="empty-conversation">
+          <div class="empty-chat">
             <p>Сообщений ещё нет. Напишите первое сообщение ниже.</p>
           </div>
         {% endif %}
@@ -52,7 +52,7 @@
 
       <form
         class="form-card send-form"
-        action="{{ url_for('send_message', conversation_id=conversation.id) }}"
+        action="{{ url_for('send_message', chat_id=chat.id) }}"
         method="post"
         data-pending-message="Формируем ответ по выбранным документам..."
         data-pending-label="Формируем ответ..."
@@ -79,19 +79,19 @@
         </div>
       {% endif %}
     </div>
-    <aside class="conversation-aside">
+    <aside class="chat-aside">
       <h2>Действия</h2>
       <form
-        action="{{ url_for('delete_conversation', conversation_id=conversation.id) }}"
+        action="{{ url_for('delete_chat', chat_id=chat.id) }}"
         method="post"
-        data-pending-message="Удаление беседы..."
-        data-pending-label="Удаляем беседу..."
-        onsubmit="return confirm('Удалить эту беседу и все её сообщения?');"
+        data-pending-message="Удаление чата..."
+        data-pending-label="Удаляем чат..."
+        onsubmit="return confirm('Удалить этот чат и все его сообщения?');"
       >
-        <button class="button button-danger" type="submit"><span aria-hidden="true">🗑</span> Удалить беседу</button>
+        <button class="button button-danger" type="submit"><span aria-hidden="true">🗑</span> Удалить чат</button>
       </form>
       <p class="aside-note">
-        Удаление беседы удаляет все её сообщения. Документ остаётся в библиотеке.
+        Удаление чата удаляет все его сообщения. Документы остаются в библиотеке.
       </p>
     </aside>
   </div>

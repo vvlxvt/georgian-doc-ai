@@ -148,33 +148,33 @@ On startup, the application also ensures keyword payload indexes for `document_i
 
 ## Chat
 
-The web UI adds persistent multi-document conversations on top of the one-shot
-`/ask` workflow. Conversations and messages are stored in SQLite, and each
-conversation can be associated with one or more documents. Follow-up questions
+The web UI adds persistent multi-document chats on top of the one-shot
+`/ask` workflow. Chats and messages are stored in SQLite, and each
+chat can be associated with one or more documents. Follow-up questions
 retrieve context only from the selected documents' indexed chunks.
 
 ### Chat workflows
 
-1. **Create a conversation:** On the Conversations page, select one or more
-   documents and create a conversation. Its search scope is limited to those
+1. **Create a chat:** On the Chats page, select one or more
+   documents and create a chat. Its search scope is limited to those
    documents.
-2. **Send a message:** Open the conversation, type your question in Russian,
+2. **Send a message:** Open the chat, type your question in Russian,
    and submit. The answer includes `[стр. N]` citations backed by the
    retrieved chunks.
-3. **View history:** Reopening a conversation displays all persisted user and
+3. **View history:** Reopening a chat displays all persisted user and
    assistant messages with their source page references.
-4. **Delete a conversation:** Deleting a conversation removes it and all its
-   messages. The source document remains in the library.
+4. **Delete a chat:** Deleting a chat removes it and all its
+   messages. Its source documents remain in the library.
 
 ### Routes
 
 | Route | Method | Description |
 |---|---|---|
-| `/conversations` | GET | List all conversations with their documents |
-| `/conversations` | POST | Create a conversation from selected documents (`document_ids` form fields) |
-| `/conversations/{id}` | GET | View a conversation with message history |
-| `/conversations/{id}/messages` | POST | Send a message in a conversation (`content` form field) |
-| `/conversations/{id}/delete` | POST | Delete a conversation and all its messages |
+| `/chats` | GET | List all chats with their documents |
+| `/chats` | POST | Create a chat from selected documents (`document_ids` form fields) |
+| `/chats/{id}` | GET | View a chat with message history |
+| `/chats/{id}/messages` | POST | Send a message in a chat (`content` form field) |
+| `/chats/{id}/delete` | POST | Delete a chat and all its messages |
 
 ### Constraints
 
@@ -190,9 +190,9 @@ retrieve context only from the selected documents' indexed chunks.
 
 ### Limitations
 
-- Conversation titles are not auto-generated; they default to "New
-  conversation".
-- Deleting a document removes its association with conversations but preserves
+- Chat titles are not auto-generated; they default to "New
+  chat".
+- Deleting a document removes its association with chats but preserves
   their messages and any associations with other documents. Qdrant vectors are
   removed before the SQL commit.
 

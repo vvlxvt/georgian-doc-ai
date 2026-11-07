@@ -29,12 +29,12 @@
           {% set documents_url = url_for('documents') %}
           {% set upload_url = url_for('upload_form') %}
           {% set ask_url = url_for('ask_form') %}
-          {% set conversations_url = url_for('conversations') %}
+          {% set chats_url = url_for('chats') %}
           <a class="nav-link{% if current_path == home_url.path %} is-active{% endif %}" href="{{ home_url }}" {% if current_path == home_url.path %}aria-current="page"{% endif %}>Главная</a>
           <a class="nav-link{% if current_path == documents_url.path or current_path.startswith(documents_url.path + '/') %} is-active{% endif %}" href="{{ documents_url }}" {% if current_path == documents_url.path or current_path.startswith(documents_url.path + '/') %}aria-current="page"{% endif %}>Документы</a>
           <a class="nav-link{% if current_path == upload_url.path %} is-active{% endif %}" href="{{ upload_url }}" {% if current_path == upload_url.path %}aria-current="page"{% endif %}>Загрузить PDF</a>
           <a class="nav-link{% if current_path == ask_url.path %} is-active{% endif %}" href="{{ ask_url }}" {% if current_path == ask_url.path %}aria-current="page"{% endif %}>Задать вопрос</a>
-          <a class="nav-link{% if current_path == conversations_url.path or current_path.startswith(conversations_url.path + '/') %} is-active{% endif %}" href="{{ conversations_url }}" {% if current_path == conversations_url.path or current_path.startswith(conversations_url.path + '/') %}aria-current="page"{% endif %}>Беседы</a>
+          <a class="nav-link{% if current_path == chats_url.path or current_path.startswith(chats_url.path + '/') %} is-active{% endif %}" href="{{ chats_url }}" {% if current_path == chats_url.path or current_path.startswith(chats_url.path + '/') %}aria-current="page"{% endif %}>Чаты</a>
         </nav>
         <div class="sidebar-note">
           <span class="sidebar-note-mark" aria-hidden="true">✓</span>

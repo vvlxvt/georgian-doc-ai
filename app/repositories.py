@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import Conversation, Document, DocumentChunk, Message, MessageRole
+from app.models import Chat, Document, DocumentChunk, Message, MessageRole
 
 
 class DocumentChunkRepository:
@@ -75,15 +75,15 @@ class DocumentChunkRepository:
         )
 
 
-class ConversationRepository:
+class ChatRepository:
     def __init__(self, session: Session):
         self.session = session
 
     def create(
         self,
         document_ids: list[str],
-        title: str = "New conversation",
-    ) -> Conversation:
+        title: str = "New chat",
+    ) -> Chat:
         selected_ids = list(dict.fromkeys(document_ids))
         if not selected_ids:
             raise ValueError("at least one document must be selected")
@@ -95,68 +95,68 @@ class ConversationRepository:
         if len(documents_by_id) != len(selected_ids):
             raise ValueError("one or more selected documents were not found")
 
-        conversation = Conversation(
+        chat = Chat(
             documents=[documents_by_id[document_id] for document_id in selected_ids],
             title=title,
         )
-        self.session.add(conversation)
+        self.session.add(chat)
         self.session.flush()
-        return conversation
+        return chat
 
-    def list_for_document(self, document_id: str) -> list[Conversation]:
+    def list_for_document(self, document_id: str) -> list[Chat]:
         return self.session.scalars(
-            select(Conversation)
-            .where(Conversation.documents.any(Document.id == document_id))
-            .options(selectinload(Conversation.documents))
-            .order_by(Conversation.updated_at.desc(), Conversation.id.desc())
+            select(Chat)
+            .where(Chat.documents.any(Document.id == document_id))
+            .options(selectinload(Chat.documents))
+            .order_by(Chat.updated_at.desc(), Chat.id.desc())
         ).all()
 
-    def list_all(self) -> list[Conversation]:
+    def list_all(self) -> list[Chat]:
         return self.session.scalars(
-            select(Conversation)
-            .options(selectinload(Conversation.documents))
-            .order_by(Conversation.updated_at.desc(), Conversation.id.desc())
+            select(Chat)
+            .options(selectinload(Chat.documents))
+            .order_by(Chat.updated_at.desc(), Chat.id.desc())
         ).all()
 
-    def get(self, conversation_id: str) -> Conversation | None:
+    def get(self, chat_id: str) -> Chat | None:
         return self.session.scalar(
-            select(Conversation)
+            select(Chat)
             .options(
-                selectinload(Conversation.documents),
-                selectinload(Conversation.messages),
+                selectinload(Chat.documents),
+                selectinload(Chat.messages),
             )
-            .where(Conversation.id == conversation_id)
+            .where(Chat.id == chat_id)
         )
 
-    def update_title(self, conversation: Conversation, title: str) -> None:
-        conversation.title = title
-        conversation.updated_at = datetime.now(UTC)
+    def update_title(self, chat: Chat, title: str) -> None:
+        chat.title = title
+        chat.updated_at = datetime.now(UTC)
 
-    def delete(self, conversation: Conversation) -> None:
-        self.session.delete(conversation)
+    def delete(self, chat: Chat) -> None:
+        self.session.delete(chat)
 
     def add_message(
         self,
-        conversation_id: str,
+        chat_id: str,
         role: MessageRole,
         content: str,
         sources_json: str | None = None,
     ) -> Message:
         message = Message(
-            conversation_id=conversation_id,
+            chat_id=chat_id,
             role=role,
             content=content,
             sources_json=sources_json,
         )
         self.session.add(message)
-        conversation = self.session.get(Conversation, conversation_id)
-        if conversation is not None:
-            conversation.updated_at = datetime.now(UTC)
+        chat = self.session.get(Chat, chat_id)
+        if chat is not None:
+            chat.updated_at = datetime.now(UTC)
         return message
 
     def get_recent_messages(
         self,
-        conversation_id: str,
+        chat_id: str,
         limit: int,
     ) -> list[Message]:
         if limit < 1:
@@ -164,7 +164,7 @@ class ConversationRepository:
 
         latest = (
             select(Message)
-            .where(Message.conversation_id == conversation_id)
+            .where(Message.chat_id == chat_id)
             .order_by(Message.created_at.desc(), Message.id.desc())
             .limit(limit)
             .subquery()

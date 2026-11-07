@@ -33,7 +33,7 @@
 
 - Python 3.12, типовые подсказки PEP 604 (`str \| None`, `StrEnum`).
 - ORM: SQLAlchemy 2.0.
-- Миграции: Alembic, две ревизии (`20261006_01`, `20261104_01`). Схема эволюционирует только через Alembic; `init_db()` — только для тестов и удобства.
+- Миграции: Alembic, четыре ревизии (`20261006_01`–`20261108_01`). Схема эволюционирует только через Alembic; `init_db()` — только для тестов и удобства.
 - Тесты: pytest 9, маркер `integration` для реальных Ollama/моделей.
 - Форматирование: black + ruff, line length 88.
 - Запрещено без явного одобрения: LangChain, LlamaIndex, Celery, Redis, OpenRouter структурированный вывод/ретраи/персистентность LLM (см. `LLM_IMPLEMENTATION_QUEUE.md` — не одобрено к реализации).
@@ -51,8 +51,8 @@ main.py                 CLI entry point (`preflight`, `index`)
 app/
   config.py             Settings (pydantic-settings, frozen, extra="ignore", .env)
   database.py           engine, SessionLocal, init_db()
-  models.py             Document, DocumentPage, DocumentChunk, Conversation, Message
-  repositories.py       DocumentChunkRepository, ConversationRepository
+  models.py             Document, DocumentPage, DocumentChunk, Chat, Message
+  repositories.py       DocumentChunkRepository, ChatRepository
   pdf.py                PDFReader / PDFPage (текст + рендер страницы 300 DPI, sha256 PNG)
   ocr.py                OCRProcessor ABC, TesseractOCREngine
   text.py               TextNormalizer, TextChunk
@@ -71,11 +71,11 @@ app/
   preflight.py          validate_runtime(): схема БД, Qdrant, LLM-провайдер, языки Tesseract
   web.py                FastAPI factory, статика, проверка origem (защита форм)
   web_dependencies.py   get_session (request-scoped SQLAlchemy сессия)
-  web_routes.py         маршруты: /, /documents, /upload, /ask, /conversations, /chat, /health
-  chat.py               ChatService (беседа привязана к документу, persisting сообщений + sources_json)
-  templates/            Jinja2 (home, documents, upload, ask, conversations, conversation, base)
+  web_routes.py         маршруты: /, /documents, /upload, /ask, /chats, /chats/{id}, /health
+  chat.py               ChatService (чаты scoped to selected documents, persisting messages + sources_json)
+  templates/            Jinja2 (home, documents, upload, ask, chats, chat, base)
   static/css, static/js — стили и маленькие скрипты
-alembic/                env.py + versions/ (две ревизии)
+alembic/                env.py + versions/ (four revisions, включая переименование схемы чатов)
 tests/                  один тест-модуль на app-модуль + test_main.py, conftest.py
 REVIEW_QUEUE.md         все 9 задач [x] Completed
 LLM_IMPLEMENTATION_QUEUE.md предложенные улучшения (не одобрены к реализации)
@@ -162,13 +162,13 @@ LLM_IMPLEMENTATION_QUEUE.md предложенные улучшения (не о
 - `GET /documents/{id}/original` — отдача оригинала только при совпадении хеша
 - `POST /documents/{id}/delete` — удаление векторов из Qdrant, строк из БД и файла оригинала
 - `GET/POST /ask` — вопрос с выбором документов, ответ через `RAGPipeline.answer`
-- `GET/POST /conversations`, `GET/POST /conversations/{id}` — беседы, привязанные к документу
-- `POST /conversations/{id}/messages` — отправка сообщения через `ChatService` (сохраняет пользовательское + ассистентское сообщения, `sources_json`)
-- `POST /conversations/{id}/delete`, `GET /health`
+- `GET/POST /chats`, `GET/POST /chats/{id}` — чаты, привязанные к выбранным документам
+- `POST /chats/{id}/messages` — отправка сообщения через `ChatService` (сохраняет пользовательское + ассистентское сообщения, `sources_json`)
+- `POST /chats/{id}/delete`, `GET /health`
 
 Защита: проверка `Origin` при мутирующих POST-запросах (same-only). Текст интерфейса на русском. UI bind только `127.0.0.1`.
 
-Шаблоны: `app/templates/` (`base.html`, `home.html`, `documents.html`, `upload.html`, `ask.html`, `conversations.html`, `conversation.html`).
+Шаблоны: `app/templates/` (`base.html`, `home.html`, `documents.html`, `upload.html`, `ask.html`, `chats.html`, `chat.html`).
 
 ---
 
@@ -203,7 +203,9 @@ LLM_IMPLEMENTATION_QUEUE.md предложенные улучшения (не о
 ## 10. Миграции (Alembic)
 
 - `20261006_01` — создаёт `documents`, `document_pages`, `document_chunks` и уникальный индекс на страницы; идемпотентен (проверяет существующие таблицы/индексы).
-- `20261104_01` — добавляет `conversations` и `messages` (для веб-чата).
+- `20261104_01` — историческая ревизия, первоначально добавлявшая `conversations` и `messages`.
+- `20261107_01` — историческая ревизия связи многие-ко-многим `conversation_documents`.
+- `20261108_01` — приводит активную схему к `chats`, `chat_documents` и `messages.chat_id`.
 - `alembic/env.py` читает `settings.database_url` с фоллбеком на `sqlalchemy.url` из `alembic.ini`.
 - Команды:
   - `.\venv\Scripts\alembic.exe upgrade head`
@@ -225,8 +227,8 @@ LLM_IMPLEMENTATION_QUEUE.md предложенные улучшения (не о
 | `main.py` | CLI: `preflight` и `index` |
 | `app/config.py` | Все настройки из окружения |
 | `app/database.py` | SQLAlchemy engine/session |
-| `app/models.py` | ORM модели: Document, DocumentPage, DocumentChunk, Conversation, Message |
-| `app/repositories.py` | DocumentChunkRepository, ConversationRepository |
+| `app/models.py` | ORM модели: Document, DocumentPage, DocumentChunk, Chat, Message |
+| `app/repositories.py` | DocumentChunkRepository, ChatRepository |
 | `app/pdf.py` | Чтение PDF, рендер страниц, content-hash |
 | `app/ocr.py` | Tesseract OCR |
 | `app/text.py` | TextNormalizer |
@@ -241,7 +243,7 @@ LLM_IMPLEMENTATION_QUEUE.md предложенные улучшения (не о
 | `app/answer.py` | AnswerGenerator (русский промпт, валидация цитат) |
 | `app/llm.py` | LLMService, Ollama, OpenRouter, повторы |
 | `app/rag.py` | RAGPipeline (retriever -> контекст -> ответ) |
-| `app/chat.py` | ChatService (беседы scoped к документу) |
+| `app/chat.py` | ChatService (чаты scoped к документу) |
 | `app/dependencies.py` | lru_cache сервисы, create_document_pipeline, reset_application_services |
 | `app/preflight.py` | validate_runtime (БД, Qdrant, LLM, Tesseract) |
 | `app/web.py` | FastAPI приложение, статика, защита форм |

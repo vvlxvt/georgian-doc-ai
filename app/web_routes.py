@@ -28,7 +28,7 @@ from app.models import (
     DocumentPage,
     PageStatus,
 )
-from app.repositories import ConversationRepository
+from app.repositories import ChatRepository
 from app.web_dependencies import get_session
 
 PAGE_SIZE = 20
@@ -532,65 +532,65 @@ def ask_question(
     )
 
 
-@router.get("/conversations", name="conversations")
-def conversations_list(
+@router.get("/chats", name="chats")
+def chats_list(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    repository = ConversationRepository(session)
-    conversations = repository.list_all()
+    repository = ChatRepository(session)
+    chats = repository.list_all()
     documents = session.scalars(
         select(Document).order_by(Document.filename, Document.id)
     ).all()
-    for conversation in conversations:
-        conversation.created_at_display = _format_datetime(conversation.created_at)
-        conversation.updated_at_display = _format_datetime(conversation.updated_at)
+    for chat in chats:
+        chat.created_at_display = _format_datetime(chat.created_at)
+        chat.updated_at_display = _format_datetime(chat.updated_at)
     return templates.TemplateResponse(
         request=request,
-        name="conversations.html",
-        context={"conversations": conversations, "documents": documents},
+        name="chats.html",
+        context={"chats": chats, "documents": documents},
     )
 
 
-@router.post("/conversations", name="create_conversation")
-def create_conversation(
+@router.post("/chats", name="create_chat")
+def create_chat(
     request: Request,
     document_ids: list[str] = Form(default=[]),
     session: Session = Depends(get_session),
 ):
-    repository = ConversationRepository(session)
+    repository = ChatRepository(session)
     if not document_ids:
         raise HTTPException(
             status_code=422,
-            detail="Выберите хотя бы один документ для беседы",
+            detail="Выберите хотя бы один документ для чата",
         )
     try:
-        conversation = repository.create(document_ids=document_ids)
+        chat = repository.create(document_ids=document_ids)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="Документ не найден") from exc
     session.commit()
     return RedirectResponse(
-        url=router.url_path_for("conversation_view", conversation_id=conversation.id),
+        url=router.url_path_for("chat_view", chat_id=chat.id),
         status_code=303,
     )
 
 
-@router.get("/conversations/{conversation_id}", name="conversation_view")
-def conversation_view(
+@router.get("/chats/{chat_id}", name="chat_view")
+def chat_view(
     request: Request,
-    conversation_id: str,
+    chat_id: str,
     session: Session = Depends(get_session),
 ):
-    repository = ConversationRepository(session)
-    conversation = repository.get(conversation_id)
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="Беседа не найдена")
-    messages = _messages_with_parsed_sources(conversation.messages)
+    repository = ChatRepository(session)
+    chat = repository.get(chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Чат не найден")
+    messages = _messages_with_parsed_sources(chat.messages)
     return templates.TemplateResponse(
         request=request,
-        name="conversation.html",
+        name="chat.html",
         context={
-            "conversation": conversation,
+            "chat": chat,
             "messages": messages,
             "error": None,
             "content": "",
@@ -599,19 +599,19 @@ def conversation_view(
     )
 
 
-@router.post("/conversations/{conversation_id}/messages", name="send_message")
+@router.post("/chats/{chat_id}/messages", name="send_message")
 def send_message(
     request: Request,
-    conversation_id: str,
+    chat_id: str,
     content: str = Form(...),
     session: Session = Depends(get_session),
 ):
     from app.dependencies import create_rag_pipeline
 
-    repository = ConversationRepository(session)
-    conversation = repository.get(conversation_id)
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="Беседа не найдена")
+    repository = ChatRepository(session)
+    chat = repository.get(chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Чат не найден")
 
     content_stripped = content.strip()
     error = None
@@ -623,11 +623,11 @@ def send_message(
         try:
             chat_service = ChatService(
                 session=session,
-                conversation_repository=repository,
+                chat_repository=repository,
                 rag_pipeline=create_rag_pipeline(),
             )
             rag_result = chat_service.send_message(
-                conversation_id=conversation_id,
+                chat_id=chat_id,
                 content=content_stripped,
             )
             if rag_result.error is not None:
@@ -636,17 +636,15 @@ def send_message(
             logger.exception("Chat message processing failed")
             error = "Не удалось отправить сообщение. Проверьте доступность служб."
 
-    # Re-fetch conversation and messages after possible state change
-    conversation = repository.get(conversation_id)
-    messages = (
-        _messages_with_parsed_sources(conversation.messages) if conversation else []
-    )
+    # Re-fetch chat and messages after possible state change
+    chat = repository.get(chat_id)
+    messages = _messages_with_parsed_sources(chat.messages) if chat else []
 
     return templates.TemplateResponse(
         request=request,
-        name="conversation.html",
+        name="chat.html",
         context={
-            "conversation": conversation,
+            "chat": chat,
             "messages": messages,
             "error": error,
             "content": content,
@@ -656,19 +654,19 @@ def send_message(
     )
 
 
-@router.post("/conversations/{conversation_id}/delete", name="delete_conversation")
-def delete_conversation(
+@router.post("/chats/{chat_id}/delete", name="delete_chat")
+def delete_chat(
     request: Request,
-    conversation_id: str,
+    chat_id: str,
     session: Session = Depends(get_session),
 ):
-    repository = ConversationRepository(session)
-    conversation = repository.get(conversation_id)
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="Беседа не найдена")
-    repository.delete(conversation)
+    repository = ChatRepository(session)
+    chat = repository.get(chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Чат не найден")
+    repository.delete(chat)
     session.commit()
-    return RedirectResponse(url=router.url_path_for("conversations"), status_code=303)
+    return RedirectResponse(url=router.url_path_for("chats"), status_code=303)
 
 
 @router.get("/health", name="health")

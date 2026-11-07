@@ -1,7 +1,7 @@
 import json
 from datetime import UTC, datetime, timedelta
 
-from app.models import Conversation, Document, Message, MessageRole
+from app.models import Chat, Document, Message, MessageRole
 
 
 def create_document(session, file_hash: str = "document-hash") -> Document:
@@ -11,14 +11,14 @@ def create_document(session, file_hash: str = "document-hash") -> Document:
     return document
 
 
-def test_conversation_persists_ordered_messages_and_sources(session):
+def test_chat_persists_ordered_messages_and_sources(session):
     document = create_document(session)
     second_document = create_document(session, file_hash="second-document-hash")
-    conversation = Conversation()
-    session.add(conversation)
-    conversation.documents.extend([document, second_document])
+    chat = Chat()
+    session.add(chat)
+    chat.documents.extend([document, second_document])
     start = datetime(2026, 1, 1, tzinfo=UTC)
-    conversation.messages.extend(
+    chat.messages.extend(
         [
             Message(
                 role=MessageRole.USER,
@@ -35,12 +35,12 @@ def test_conversation_persists_ordered_messages_and_sources(session):
             ),
         ]
     )
-    session.add(conversation)
+    session.add(chat)
     session.commit()
 
-    saved = session.get(Conversation, conversation.id)
+    saved = session.get(Chat, chat.id)
 
-    assert saved.title == "New conversation"
+    assert saved.title == "New chat"
     assert [message.role for message in saved.messages] == [
         MessageRole.USER,
         MessageRole.ASSISTANT,
@@ -50,35 +50,35 @@ def test_conversation_persists_ordered_messages_and_sources(session):
     ]
 
 
-def test_deleting_conversation_deletes_its_messages(session):
+def test_deleting_chat_deletes_its_messages(session):
     document = create_document(session)
-    conversation = Conversation(documents=[document])
-    conversation.messages.append(Message(role=MessageRole.USER, content="Вопрос"))
-    session.add(conversation)
+    chat = Chat(documents=[document])
+    chat.messages.append(Message(role=MessageRole.USER, content="Вопрос"))
+    session.add(chat)
     session.commit()
-    message_id = conversation.messages[0].id
+    message_id = chat.messages[0].id
 
-    session.delete(conversation)
+    session.delete(chat)
     session.commit()
 
-    assert session.get(Conversation, conversation.id) is None
+    assert session.get(Chat, chat.id) is None
     assert session.get(Message, message_id) is None
 
 
-def test_deleting_document_preserves_conversation_and_messages(session):
+def test_deleting_document_preserves_chat_and_messages(session):
     document = create_document(session)
     second_document = create_document(session, file_hash="second-document-hash")
-    conversation = Conversation(documents=[document, second_document])
-    conversation.messages.append(Message(role=MessageRole.USER, content="Вопрос"))
-    session.add(conversation)
+    chat = Chat(documents=[document, second_document])
+    chat.messages.append(Message(role=MessageRole.USER, content="Вопрос"))
+    session.add(chat)
     session.commit()
-    conversation_id = conversation.id
-    message_id = conversation.messages[0].id
+    chat_id = chat.id
+    message_id = chat.messages[0].id
 
     session.delete(document)
     session.commit()
 
-    saved_conversation = session.get(Conversation, conversation_id)
-    assert saved_conversation is not None
-    assert [item.id for item in saved_conversation.documents] == [second_document.id]
+    saved_chat = session.get(Chat, chat_id)
+    assert saved_chat is not None
+    assert [item.id for item in saved_chat.documents] == [second_document.id]
     assert session.get(Message, message_id) is not None

@@ -831,54 +831,54 @@ def test_get_session_closes_session_after_request():
     assert session.closed is True
 
 
-def add_web_conversation(
+def add_web_chat(
     session_factory,
     document_id="doc-1",
-    title="Test conversation",
+    title="Test chat",
 ):
     with session_factory() as session:
         document = Document(filename="document.pdf", file_hash="d" * 64)
         session.add(document)
         session.flush()
-        from app.models import Conversation, Message, MessageRole
+        from app.models import Chat, Message, MessageRole
 
-        conversation = Conversation(
+        chat = Chat(
             id=document_id,
             documents=[document],
             title=title,
         )
-        session.add(conversation)
+        session.add(chat)
         session.flush()
         message = Message(
-            conversation_id=conversation.id,
+            chat_id=chat.id,
             role=MessageRole.USER,
             content="Тестовый вопрос",
         )
         session.add(message)
         session.commit()
-        return conversation.id
+        return chat.id
 
 
-def test_conversations_list_renders_empty_state(web_session_factory):
+def test_chats_list_renders_empty_state(web_session_factory):
     application = create_app(session_factory=web_session_factory)
     with TestClient(application) as client:
-        response = client.get("/conversations")
+        response = client.get("/chats")
 
     assert response.status_code == 200
-    assert "Бесед ещё нет" in response.text
+    assert "Чатов ещё нет" in response.text
 
 
-def test_conversations_list_renders_existing(web_session_factory):
-    add_web_conversation(web_session_factory)
+def test_chats_list_renders_existing(web_session_factory):
+    add_web_chat(web_session_factory)
     application = create_app(session_factory=web_session_factory)
     with TestClient(application) as client:
-        response = client.get("/conversations")
+        response = client.get("/chats")
 
     assert response.status_code == 200
     assert "document.pdf" in response.text
 
 
-def test_create_conversation_with_multiple_documents(web_session_factory):
+def test_create_chat_with_multiple_documents(web_session_factory):
     with web_session_factory() as session:
         first = Document(filename="first.pdf", file_hash="1" * 64)
         second = Document(filename="second.pdf", file_hash="2" * 64)
@@ -889,40 +889,40 @@ def test_create_conversation_with_multiple_documents(web_session_factory):
     application = create_app(session_factory=web_session_factory)
     with TestClient(application) as client:
         response = client.post(
-            "/conversations",
+            "/chats",
             data={"document_ids": document_ids},
             follow_redirects=False,
         )
 
     assert response.status_code == 303
     with web_session_factory() as session:
-        from app.models import Conversation
+        from app.models import Chat
 
-        conversation = session.query(Conversation).one()
-        assert {document.id for document in conversation.documents} == set(document_ids)
+        chat = session.query(Chat).one()
+        assert {document.id for document in chat.documents} == set(document_ids)
 
 
-def test_create_conversation_requires_at_least_one_document(web_session_factory):
+def test_create_chat_requires_at_least_one_document(web_session_factory):
     application = create_app(session_factory=web_session_factory)
     with TestClient(application) as client:
-        response = client.post("/conversations", data={})
+        response = client.post("/chats", data={})
 
     assert response.status_code == 422
 
 
-def test_conversation_view_returns_404_for_missing(web_session_factory):
+def test_chat_view_returns_404_for_missing(web_session_factory):
     application = create_app(session_factory=web_session_factory)
     with TestClient(application) as client:
-        response = client.get("/conversations/missing-id")
+        response = client.get("/chats/missing-id")
 
     assert response.status_code == 404
 
 
-def test_conversation_view_renders_document_and_messages(web_session_factory):
-    conversation_id = add_web_conversation(web_session_factory)
+def test_chat_view_renders_document_and_messages(web_session_factory):
+    chat_id = add_web_chat(web_session_factory)
     application = create_app(session_factory=web_session_factory)
     with TestClient(application) as client:
-        response = client.get(f"/conversations/{conversation_id}")
+        response = client.get(f"/chats/{chat_id}")
 
     assert response.status_code == 200
     assert "document.pdf" in response.text
@@ -930,11 +930,11 @@ def test_conversation_view_renders_document_and_messages(web_session_factory):
 
 
 def test_send_message_empty_content_returns_422(web_session_factory):
-    conversation_id = add_web_conversation(web_session_factory)
+    chat_id = add_web_chat(web_session_factory)
     application = create_app(session_factory=web_session_factory)
     with TestClient(application) as client:
         response = client.post(
-            f"/conversations/{conversation_id}/messages",
+            f"/chats/{chat_id}/messages",
             data={"content": "   "},
         )
 
@@ -943,7 +943,7 @@ def test_send_message_empty_content_returns_422(web_session_factory):
 
 
 def test_send_message_persists_user_and_assistant(web_session_factory, monkeypatch):
-    conversation_id = add_web_conversation(web_session_factory)
+    chat_id = add_web_chat(web_session_factory)
 
     class FakeRAGPipeline:
         def answer_with_sources(self, question, document_id=None, **kwargs):
@@ -969,7 +969,7 @@ def test_send_message_persists_user_and_assistant(web_session_factory, monkeypat
     application = create_app(session_factory=web_session_factory)
     with TestClient(application) as client:
         response = client.post(
-            f"/conversations/{conversation_id}/messages",
+            f"/chats/{chat_id}/messages",
             data={"content": "Каков срок договора?"},
         )
 
@@ -979,32 +979,32 @@ def test_send_message_persists_user_and_assistant(web_session_factory, monkeypat
     assert "стр. 1" in response.text
 
 
-def test_delete_conversation_removes_record(web_session_factory):
-    conversation_id = add_web_conversation(web_session_factory)
+def test_delete_chat_removes_record(web_session_factory):
+    chat_id = add_web_chat(web_session_factory)
     application = create_app(session_factory=web_session_factory)
     with TestClient(application) as client:
         response = client.post(
-            f"/conversations/{conversation_id}/delete",
+            f"/chats/{chat_id}/delete",
             follow_redirects=False,
         )
 
     assert response.status_code == 303
     with web_session_factory() as session:
-        from app.models import Conversation
+        from app.models import Chat
 
-        assert session.get(Conversation, conversation_id) is None
+        assert session.get(Chat, chat_id) is None
 
 
-def test_conversation_mutating_routes_reject_cross_origin(web_session_factory):
-    conversation_id = add_web_conversation(web_session_factory)
+def test_chat_mutating_routes_reject_cross_origin(web_session_factory):
+    chat_id = add_web_chat(web_session_factory)
     with TestClient(app) as client:
         response = client.post(
-            f"/conversations/{conversation_id}/messages",
+            f"/chats/{chat_id}/messages",
             data={"content": "Вопрос"},
             headers={"Origin": "https://untrusted.example"},
         )
         response_delete = client.post(
-            f"/conversations/{conversation_id}/delete",
+            f"/chats/{chat_id}/delete",
             headers={"Origin": "https://untrusted.example"},
         )
 
@@ -1012,16 +1012,16 @@ def test_conversation_mutating_routes_reject_cross_origin(web_session_factory):
     assert response_delete.status_code == 403
 
 
-def test_conversation_list_link_in_navigation(web_session_factory):
+def test_chat_list_link_in_navigation(web_session_factory):
     with TestClient(app) as client:
         response = client.get("/")
 
     assert response.status_code == 200
-    assert 'href="http://testserver/conversations"' in response.text
-    assert "Беседы" in response.text
+    assert 'href="http://testserver/chats"' in response.text
+    assert "Чаты" in response.text
 
 
-def test_delete_document_preserves_multi_document_conversation_and_messages(
+def test_delete_document_preserves_multi_document_chat_and_messages(
     web_session_factory, monkeypatch
 ):
     with web_session_factory() as session:
@@ -1029,16 +1029,16 @@ def test_delete_document_preserves_multi_document_conversation_and_messages(
         other_document = Document(filename="other.pdf", file_hash="f" * 64)
         session.add_all([document, other_document])
         session.flush()
-        from app.models import Conversation, Message, MessageRole
+        from app.models import Chat, Message, MessageRole
 
-        conversation = Conversation(
+        chat = Chat(
             documents=[document, other_document],
             title="Test",
         )
-        session.add(conversation)
+        session.add(chat)
         session.flush()
         message = Message(
-            conversation_id=conversation.id,
+            chat_id=chat.id,
             role=MessageRole.USER,
             content="Тест",
         )
@@ -1046,7 +1046,7 @@ def test_delete_document_preserves_multi_document_conversation_and_messages(
         session.commit()
         document_id = document.id
         other_document_id = other_document.id
-        conversation_id = conversation.id
+        chat_id = chat.id
         message_id = message.id
 
     application = create_app(session_factory=web_session_factory)
@@ -1088,25 +1088,23 @@ def test_delete_document_preserves_multi_document_conversation_and_messages(
     assert response.status_code == 303
 
     with web_session_factory() as session:
-        from app.models import Conversation, Message
+        from app.models import Chat, Message
 
         assert session.get(Document, document_id) is None
-        saved_conversation = session.get(Conversation, conversation_id)
-        assert saved_conversation is not None
-        assert [document.id for document in saved_conversation.documents] == [
-            other_document_id
-        ]
+        saved_chat = session.get(Chat, chat_id)
+        assert saved_chat is not None
+        assert [document.id for document in saved_chat.documents] == [other_document_id]
         assert session.get(Message, message_id) is not None
 
 
-def test_delete_conversation_cascades_to_messages(web_session_factory):
-    conversation_id = add_web_conversation(web_session_factory)
+def test_delete_chat_cascades_to_messages(web_session_factory):
+    chat_id = add_web_chat(web_session_factory)
 
     with web_session_factory() as session:
         from app.models import Message, MessageRole
 
         message = Message(
-            conversation_id=conversation_id,
+            chat_id=chat_id,
             role=MessageRole.USER,
             content="Тест",
         )
@@ -1117,14 +1115,14 @@ def test_delete_conversation_cascades_to_messages(web_session_factory):
     application = create_app(session_factory=web_session_factory)
     with TestClient(application) as client:
         response = client.post(
-            f"/conversations/{conversation_id}/delete",
+            f"/chats/{chat_id}/delete",
             follow_redirects=False,
         )
 
     assert response.status_code == 303
 
     with web_session_factory() as session:
-        from app.models import Conversation, Message
+        from app.models import Chat, Message
 
-        assert session.get(Conversation, conversation_id) is None
+        assert session.get(Chat, chat_id) is None
         assert session.get(Message, message_id) is None

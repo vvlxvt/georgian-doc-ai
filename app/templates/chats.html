@@ -1,22 +1,22 @@
 {% extends "base.html" %}
 
-{% block title %}Беседы — Georgian Document RAG{% endblock %}
-{% block meta_description %}Список хранящихся бесед по документам.{% endblock %}
+{% block title %}Чаты — Georgian Document RAG{% endblock %}
+{% block meta_description %}Список чатов по документам.{% endblock %}
 
 
 {% block content %}
   <section class="page-heading" aria-labelledby="page-title">
-    <p class="eyebrow">Беседы</p>
-    <h1 id="page-title">Хранимые беседы</h1>
+    <p class="eyebrow">Чаты</p>
+    <h1 id="page-title">Хранимые чаты</h1>
     <p class="page-description">
-      Выберите один или несколько документов для беседы. Ответы будут основаны
+      Выберите один или несколько документов для чата. Ответы будут основаны
       только на найденных фрагментах выбранных документов.
     </p>
   </section>
 
-  <form class="form-card" action="{{ url_for('create_conversation') }}" method="post">
+  <form class="form-card" action="{{ url_for('create_chat') }}" method="post">
     <fieldset class="document-filter">
-      <legend class="filter-heading">Документы для новой беседы</legend>
+      <legend class="filter-heading">Документы для нового чата</legend>
       {% if documents %}
         <div class="document-options">
           {% for document in documents %}
@@ -28,10 +28,10 @@
           {% endfor %}
         </div>
         <div class="form-actions">
-          <button class="button button-primary" type="submit">Создать беседу</button>
+          <button class="button button-primary" type="submit">Создать чат</button>
         </div>
       {% else %}
-        <p class="field-help">Сначала загрузите документ для начала беседы.</p>
+        <p class="field-help">Сначала загрузите документ для начала чата.</p>
         <a class="text-link" href="{{ url_for('upload_form') }}">Загрузить PDF</a>
       {% endif %}
     </fieldset>
@@ -41,40 +41,40 @@
     <div class="alert alert-error" role="alert">{{ error }}</div>
   {% endif %}
 
-  {% if conversations %}
+  {% if chats %}
     <div class="document-list">
       <table class="striped-table">
         <thead>
           <tr>
             <th>Документы</th>
-            <th>Беседа</th>
+            <th>Чат</th>
             <th>Создана</th>
             <th>Обновлена</th>
             <th>Действие</th>
           </tr>
         </thead>
         <tbody>
-          {% for conversation in conversations %}
+          {% for chat in chats %}
           <tr>
             <td>
-              {% for document in conversation.documents %}
+              {% for document in chat.documents %}
                 {{ document.filename }}{% if not loop.last %}, {% endif %}
               {% else %}
                 Нет доступных документов
               {% endfor %}
             </td>
             <td>
-              <a href="{{ url_for('conversation_view', conversation_id=conversation.id) }}">{{ conversation.title or "Без названия" }}</a>
+              <a href="{{ url_for('chat_view', chat_id=chat.id) }}">{{ chat.title or "Без названия" }}</a>
             </td>
-            <td>{{ conversation.created_at_display }}</td>
-            <td>{{ conversation.updated_at_display }}</td>
+            <td>{{ chat.created_at_display }}</td>
+            <td>{{ chat.updated_at_display }}</td>
             <td>
               <form
-                action="{{ url_for('delete_conversation', conversation_id=conversation.id) }}"
+                action="{{ url_for('delete_chat', chat_id=chat.id) }}"
                 method="post"
-                data-pending-message="Удаление беседы..."
-                data-pending-label="Удаляем беседу..."
-                onsubmit="return confirm('Удалить беседу и все её сообщения?');"
+                data-pending-message="Удаление чата..."
+                data-pending-label="Удаляем чат..."
+                onsubmit="return confirm('Удалить чат и все его сообщения?');"
               >
                 <button class="button button-danger" type="submit"><span aria-hidden="true">🗑</span> Удалить</button>
               </form>
@@ -86,7 +86,7 @@
     </div>
   {% else %}
     <div class="no-documents">
-      <p>Бесед ещё нет. Выберите документы выше, чтобы создать первую беседу.</p>
+      <p>Чатов ещё нет. Выберите документы выше, чтобы создать первый чат.</p>
     </div>
   {% endif %}
 {% endblock %}

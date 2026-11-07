@@ -19,13 +19,13 @@ class Base(DeclarativeBase):
     pass
 
 
-conversation_documents = Table(
-    "conversation_documents",
+chat_documents = Table(
+    "chat_documents",
     Base.metadata,
     Column(
-        "conversation_id",
+        "chat_id",
         String(36),
-        ForeignKey("conversations.id", ondelete="CASCADE"),
+        ForeignKey("chats.id", ondelete="CASCADE"),
         primary_key=True,
     ),
     Column(
@@ -71,8 +71,8 @@ class Document(Base):
         cascade="all, delete-orphan",
     )
 
-    conversations: Mapped[list["Conversation"]] = relationship(
-        secondary=conversation_documents,
+    chats: Mapped[list["Chat"]] = relationship(
+        secondary=chat_documents,
         back_populates="documents",
     )
 
@@ -164,8 +164,8 @@ class DocumentChunk(Base):
     )
 
 
-class Conversation(Base):
-    __tablename__ = "conversations"
+class Chat(Base):
+    __tablename__ = "chats"
 
     id: Mapped[str] = mapped_column(
         String(36),
@@ -175,7 +175,8 @@ class Conversation(Base):
 
     title: Mapped[str] = mapped_column(
         String(255),
-        default="New conversation",
+        default="New chat",
+        server_default="New chat",
     )
 
     created_at: Mapped[datetime] = mapped_column(
@@ -190,12 +191,12 @@ class Conversation(Base):
     )
 
     documents: Mapped[list[Document]] = relationship(
-        secondary=conversation_documents,
-        back_populates="conversations",
+        secondary=chat_documents,
+        back_populates="chats",
     )
 
     messages: Mapped[list["Message"]] = relationship(
-        back_populates="conversation",
+        back_populates="chat",
         cascade="all, delete-orphan",
         order_by="Message.created_at, Message.id",
     )
@@ -210,8 +211,8 @@ class Message(Base):
         default=lambda: str(uuid4()),
     )
 
-    conversation_id: Mapped[str] = mapped_column(
-        ForeignKey("conversations.id", ondelete="CASCADE"),
+    chat_id: Mapped[str] = mapped_column(
+        ForeignKey("chats.id", ondelete="CASCADE"),
         index=True,
     )
 
@@ -224,6 +225,6 @@ class Message(Base):
         default=lambda: datetime.now(UTC),
     )
 
-    conversation: Mapped[Conversation] = relationship(
+    chat: Mapped[Chat] = relationship(
         back_populates="messages",
     )

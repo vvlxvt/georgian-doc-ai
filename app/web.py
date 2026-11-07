@@ -35,14 +35,14 @@ def create_app(
         is_document_delete = request.url.path.startswith(
             "/documents/"
         ) and request.url.path.endswith("/delete")
-        is_conversation_mutating = request.url.path.startswith("/conversations/") and (
+        is_chat_mutating = request.url.path.startswith("/chats/") and (
             request.url.path.endswith("/messages")
             or request.url.path.endswith("/delete")
         )
         if request.method == "POST" and (
             request.url.path in {"/upload", "/ask"}
             or is_document_delete
-            or is_conversation_mutating
+            or is_chat_mutating
         ):
             origin = request.headers.get("origin")
             if origin and not _is_same_origin(origin, str(request.base_url)):
