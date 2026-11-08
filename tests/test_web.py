@@ -878,6 +878,62 @@ def test_chats_list_renders_existing(web_session_factory):
     assert "document.pdf" in response.text
 
 
+def test_shared_layout_displays_recent_chats_in_right_sidebar(web_session_factory):
+    chat_id = add_web_chat(
+        web_session_factory,
+        document_id="sidebar-chat",
+        title="Чат по договору",
+    )
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        home_response = client.get("/")
+        chats_response = client.get("/chats")
+        chat_response = client.get(f"/chats/{chat_id}")
+
+    assert home_response.status_code == 200
+    assert "chat-sidebar" not in home_response.text
+    assert "Чат по договору" not in home_response.text
+    assert '<aside class="chat-sidebar" aria-label="Чаты">' in chats_response.text
+    assert "Чат по договору" in chats_response.text
+    assert f'href="http://testserver/chats/{chat_id}"' in chats_response.text
+    assert 'class="chat-sidebar-link is-active"' in chat_response.text
+    assert f'href="http://testserver/chats/{chat_id}"' in chat_response.text
+    assert "В процессе" in chat_response.text
+    assert "Новый чат" not in chats_response.text
+    assert 'placeholder="Выберите чат"' in chats_response.text
+    assert 'aria-label="Отправить вопрос" disabled' in chats_response.text
+    assert 'placeholder="Напишите вопрос..."' in chat_response.text
+    assert '<span aria-hidden="true">▶</span>' in chat_response.text
+
+
+def test_shared_layout_lists_all_chats_without_limit(web_session_factory):
+    with web_session_factory() as session:
+        document = Document(filename="document.pdf", file_hash="d" * 64)
+        session.add(document)
+        session.flush()
+        from app.models import Chat
+
+        session.add_all(
+            [
+                Chat(
+                    id=f"chat-{index}",
+                    title=f"Saved chat {index}",
+                    documents=[document],
+                )
+                for index in range(10)
+            ]
+        )
+        session.commit()
+
+    application = create_app(session_factory=web_session_factory)
+    with TestClient(application) as client:
+        response = client.get("/chats/chat-0")
+
+    assert response.status_code == 200
+    assert "Saved chat 9" in response.text
+
+
 def test_create_chat_with_multiple_documents(web_session_factory):
     with web_session_factory() as session:
         first = Document(filename="first.pdf", file_hash="1" * 64)

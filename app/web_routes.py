@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.chat import ChatService
 from app.llm import LLMError, LLMErrorCategory
 from app.models import (
+    Chat,
     Document,
     DocumentPage,
     PageStatus,
@@ -73,7 +74,30 @@ INPUT_DOCUMENT_DIRECTORY = Path(__file__).resolve().parents[1] / "data" / "input
 logger = logging.getLogger(__name__)
 router = APIRouter()
 TEMPLATE_DIRECTORY = Path(__file__).parent / "templates"
-templates = Jinja2Templates(directory=TEMPLATE_DIRECTORY)
+
+
+def _chat_sidebar_context(request: Request) -> dict:
+    if not request.url.path.startswith("/chats"):
+        return {"sidebar_chats": []}
+
+    session = request.app.state.session_factory()
+    try:
+        chats = session.execute(
+            select(Chat.id, Chat.title).order_by(Chat.updated_at.desc(), Chat.id.desc())
+        ).all()
+        return {
+            "sidebar_chats": [
+                {"id": chat_id, "title": title} for chat_id, title in chats
+            ]
+        }
+    finally:
+        session.close()
+
+
+templates = Jinja2Templates(
+    directory=TEMPLATE_DIRECTORY,
+    context_processors=[_chat_sidebar_context],
+)
 
 
 def _llm_failure_message(error: LLMError) -> str:

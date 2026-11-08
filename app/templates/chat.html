@@ -51,20 +51,26 @@
       </div>
 
       <form
-        class="form-card send-form"
+        class="chat-composer"
         action="{{ url_for('send_message', chat_id=chat.id) }}"
         method="post"
         data-pending-message="Формируем ответ по выбранным документам..."
-        data-pending-label="Формируем ответ..."
+        data-pending-label="..."
       >
-        <div class="form-field">
-          <label for="content">Ваше сообщение</label>
-          <textarea id="content" name="content" rows="3" required>{{ content or "" }}</textarea>
-        </div>
-        <div class="form-actions">
-          <button class="button button-primary" type="submit"><span aria-hidden="true">✳</span> Отправить</button>
-          <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
-        </div>
+        <label class="visually-hidden" for="content">Ваш вопрос</label>
+        <input
+          id="content"
+          name="content"
+          type="text"
+          placeholder="Напишите вопрос..."
+          value="{{ content or '' }}"
+          autocomplete="off"
+          required
+        >
+        <button class="button-primary" type="submit" aria-label="Отправить вопрос">
+          <span aria-hidden="true">▶</span>
+        </button>
+        <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
       </form>
 
       {% if rag_result is not none and rag_result.assistant_message %}

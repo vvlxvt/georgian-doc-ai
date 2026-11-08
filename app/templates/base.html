@@ -14,7 +14,7 @@
   </head>
   <body>
     <a class="skip-link" href="#main-content">Перейти к содержимому</a>
-    <div class="app-shell">
+    <div class="app-shell{% if request.url.path.startswith('/chats') %} has-chat-sidebar{% endif %}">
       <aside class="site-sidebar">
         <a class="brand" href="{{ url_for('home') }}" aria-label="Georgian Document RAG — главная">
           <span class="brand-mark" aria-hidden="true">G</span>
@@ -59,6 +59,46 @@
           <span>Ответы формируются по содержимому источников</span>
         </footer>
       </div>
+      {% if request.url.path.startswith('/chats') %}
+        <aside class="chat-sidebar" aria-label="Чаты">
+          <div class="chat-sidebar-heading">
+            <h2>Чаты</h2>
+            <a href="{{ url_for('chats') }}">Все</a>
+          </div>
+          {% if sidebar_chats %}
+            <nav class="chat-sidebar-list" aria-label="Список чатов">
+              {% for chat in sidebar_chats %}
+                {% set chat_url = url_for('chat_view', chat_id=chat.id) %}
+                <a
+                  class="chat-sidebar-link{% if request.url.path == chat_url.path %} is-active{% endif %}"
+                  href="{{ chat_url }}"
+                  {% if request.url.path == chat_url.path %}aria-current="page"{% endif %}
+                >
+                  {{ chat.title or "Без названия" }}
+                  {% if request.url.path == chat_url.path %}
+                    <span class="chat-sidebar-status">В процессе</span>
+                  {% endif %}
+                </a>
+              {% endfor %}
+            </nav>
+          {% else %}
+            <p class="chat-sidebar-empty">Сохранённых чатов пока нет.</p>
+          {% endif %}
+          {% if request.url.path == '/chats' %}
+            <div class="chat-sidebar-composer is-disabled" aria-label="Вопрос в чат">
+              <input
+                type="text"
+                placeholder="Выберите чат"
+                aria-label="Вопрос"
+                disabled
+              >
+              <button type="button" aria-label="Отправить вопрос" disabled>
+                <span aria-hidden="true">▶</span>
+              </button>
+            </div>
+          {% endif %}
+        </aside>
+      {% endif %}
     </div>
     <script src="{{ url_for('static', path='/js/form-pending.js') }}" defer></script>
   </body>
