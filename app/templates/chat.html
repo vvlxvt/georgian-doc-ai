@@ -33,14 +33,6 @@
               <span class="message-time">{{ message.created_at_display }}</span>
             </div>
             <div class="message-text">{{ message.content }}</div>
-            {% if message.role == "assistant" and message.parsed_sources %}
-              <div class="message-sources">
-                <span class="sources-label">Источники:</span>
-                {% for source in message.parsed_sources %}
-                  <span class="source-chip">[стр. {{ source.page_number }}]</span>
-                {% endfor %}
-              </div>
-            {% endif %}
           </li>
           {% endfor %}
         {% else %}
@@ -74,17 +66,6 @@
         <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
       </form>
 
-      {% if rag_result is not none and rag_result.assistant_message %}
-        <div class="alert alert-info" role="status">
-          <p>Ответ: {{ rag_result.assistant_message.content }}</p>
-          {% if rag_result.sources %}
-            <p class="sources-label">Использованные страницы:</p>
-            {% for source in rag_result.sources %}
-              <span class="source-chip">[стр. {{ source.page_number }}]</span>
-            {% endfor %}
-          {% endif %}
-        </div>
-      {% endif %}
     </div>
     <aside class="chat-aside">
       <h2>Действия</h2>

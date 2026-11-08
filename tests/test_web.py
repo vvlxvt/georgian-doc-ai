@@ -71,6 +71,10 @@ def test_static_pending_script_is_mounted():
 
     assert response.status_code == 200
     assert 'form.addEventListener("submit"' in response.text
+    assert 'form.classList.contains("chat-composer")' in response.text
+    assert "messageList.append(messageCard)" in response.text
+    assert 'messageInput.value = ""' in response.text
+    assert "submittedContent.name = messageInput.name" in response.text
 
 
 @pytest.mark.parametrize(
@@ -1087,6 +1091,10 @@ def test_send_message_persists_user_and_assistant(web_session_factory, monkeypat
     assert first_response.status_code == 200
     assert second_response.status_code == 200
     assert history_response.status_code == 200
+    composer = second_response.text.split('id="content"', 1)[1].split(">", 1)[0]
+    assert 'value=""' in composer
+    assert "Использованные страницы" not in second_response.text
+    assert 'class="message-sources"' not in history_response.text
     expected_history = [
         "Каков срок договора?",
         "Первый ответ. [стр. 1]",
@@ -1109,6 +1117,7 @@ def test_send_message_rejects_messages_above_maximum_length(web_session_factory)
 
     assert response.status_code == 422
     assert "не должно превышать 2000 символов" in response.text
+    assert f'value="{"a" * 2001}"' in response.text
 
 
 def test_delete_chat_removes_record(web_session_factory):

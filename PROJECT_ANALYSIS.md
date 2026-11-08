@@ -1,7 +1,7 @@
 # PROJECT_ANALYSIS.md
 
 Контекстный файл для возобновления работы над проектом **Georgian Document RAG prototype**.
-Актуален на момент анализа (ветка `main`, коммит `34d77036`). Не коммитить без запроса пользователя.
+Актуален на 2026-11-08 (ветка `main`, после изменений контекста и интерфейса чата).
 
 ---
 
@@ -72,7 +72,7 @@ app/
   web.py                FastAPI factory, статика, проверка origem (защита форм)
   web_dependencies.py   get_session (request-scoped SQLAlchemy сессия)
   web_routes.py         маршруты: /, /documents, /upload, /ask, /chats, /chats/{id}, /health
-  chat.py               ChatService (чаты scoped to selected documents, persisting messages + sources_json)
+  chat.py               ChatService (чаты scoped to selected documents; persisting ordered messages + sources_json)
   templates/            Jinja2 (home, documents, upload, ask, chats, chat, base)
   static/css, static/js — стили и маленькие скрипты
 alembic/                env.py + versions/ (four revisions, включая переименование схемы чатов)
@@ -162,13 +162,20 @@ LLM_IMPLEMENTATION_QUEUE.md предложенные улучшения (не о
 - `GET /documents/{id}/original` — отдача оригинала только при совпадении хеша
 - `POST /documents/{id}/delete` — удаление векторов из Qdrant, строк из БД и файла оригинала
 - `GET/POST /ask` — вопрос с выбором документов, ответ через `RAGPipeline.answer`
-- `GET/POST /chats`, `GET/POST /chats/{id}` — чаты, привязанные к выбранным документам
+- `GET/POST /chats`, `GET /chats/{id}` — список чатов, создание и просмотр чата с сообщениями
 - `POST /chats/{id}/messages` — отправка сообщения через `ChatService` (сохраняет пользовательское + ассистентское сообщения, `sources_json`)
 - `POST /chats/{id}/delete`, `GET /health`
 
 Защита: проверка `Origin` при мутирующих POST-запросах (same-only). Текст интерфейса на русском. UI bind только `127.0.0.1`.
 
 Шаблоны: `app/templates/` (`base.html`, `home.html`, `documents.html`, `upload.html`, `ask.html`, `chats.html`, `chat.html`).
+
+Чат:
+- История сообщений отображается в хронологическом порядке; последние пять ходов ограничивают контекст последующих вопросов.
+- При отправке JavaScript сразу добавляет текст вопроса в `message-list`, прокручивает историю вниз и очищает поле. Для POST сохраняется отдельное скрытое поле; пустые и повторные отправки блокируются.
+- После успешного POST поле остаётся пустым; при ошибке валидации введённый текст сохраняется.
+- Ответ показывается один раз в общей истории. Дополнительный список страниц под ответом не отображается; цитаты `[стр. N]` остаются в самом тексте.
+- История помогает интерпретировать уточняющие вопросы и формировать поисковый запрос, но фактическое обоснование ответа берётся только из выбранных документов.
 
 ---
 
@@ -185,7 +192,8 @@ LLM_IMPLEMENTATION_QUEUE.md предложенные улучшения (не о
 
 ## 9. Тестирование
 
-- 180 passed, 3 deselected (`pytest -m "not integration"`); `ruff check` и `black --check` чисты.
+- 243 passed, 4 deselected (`pytest -m "not integration"`; последнее полное выполнение 2026-11-08).
+- `ruff check --no-cache .` и `black --check .` проходят. На Windows обычный запуск Ruff ранее падал с внутренней ошибкой package cache при сканировании `alembic/versions`; запуск с `--no-cache` проходит.
 - In-memory SQLite (`Base.metadata.create_all` в `conftest.py`), `QdrantClient(":memory:")`.
 - Патчинг по пути импорта, например `app.preflight.httpx.get`.
 - `@pytest.mark.integration` — реальный Ollama / реальная модель (модель загружается только при `RUN_REAL_MODEL_TESTS=1`, иначе skip, чтобы избежать краша интерпретатора на Windows в `torch`).

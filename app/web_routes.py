@@ -53,18 +53,9 @@ def _format_datetime(value):
     return str(value)[:16]
 
 
-def _messages_with_parsed_sources(messages):
-    """Attach parsed source references and formatted times to messages."""
-    import json as _json
-
+def _messages_for_display(messages):
+    """Attach formatted timestamps to messages."""
     for message in messages:
-        parsed = None
-        if message.sources_json:
-            try:
-                parsed = _json.loads(message.sources_json)
-            except (_json.JSONDecodeError, TypeError):
-                parsed = None
-        message.parsed_sources = parsed or []
         message.created_at_display = _format_datetime(message.created_at)
     return messages
 
@@ -609,7 +600,7 @@ def chat_view(
     chat = repository.get(chat_id)
     if chat is None:
         raise HTTPException(status_code=404, detail="Чат не найден")
-    messages = _messages_with_parsed_sources(chat.messages)
+    messages = _messages_for_display(chat.messages)
     return templates.TemplateResponse(
         request=request,
         name="chat.html",
@@ -618,7 +609,6 @@ def chat_view(
             "messages": messages,
             "error": None,
             "content": "",
-            "rag_result": None,
             "max_question_chars": MAX_QUESTION_CHARS,
         },
     )
@@ -672,7 +662,7 @@ def send_message(
 
     # Re-fetch chat and messages after possible state change
     chat = repository.get(chat_id)
-    messages = _messages_with_parsed_sources(chat.messages) if chat else []
+    messages = _messages_for_display(chat.messages) if chat else []
 
     return templates.TemplateResponse(
         request=request,
@@ -681,8 +671,7 @@ def send_message(
             "chat": chat,
             "messages": messages,
             "error": error,
-            "content": content,
-            "rag_result": rag_result,
+            "content": content if status_code == 422 else "",
             "max_question_chars": MAX_QUESTION_CHARS,
         },
         status_code=status_code,
