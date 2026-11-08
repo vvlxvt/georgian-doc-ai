@@ -182,7 +182,9 @@ retrieve context only from the selected documents' indexed chunks.
   network without authentication and authorization.
 - **No authentication:** The initial chat MVP has no login or access control.
 - **History limit:** Retrieval uses a bounded window of recent turns; older
-  history is not sent to the LLM.
+  history is not sent to the LLM. Recent turns help resolve follow-up questions
+  and form the retrieval query, but only selected-document chunks are evidence
+  for answers.
 - **Citations only:** Stored source references contain document ID, page
   number, and chunk ID — never the retrieved source text itself.
 - **No automatic retries:** LLM failures leave the user message persisted

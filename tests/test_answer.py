@@ -1,6 +1,11 @@
 import pytest
 
-from app.answer import AnswerGenerator, AnswerResult, ChatAnswerResult
+from app.answer import (
+    AnswerGenerator,
+    AnswerResult,
+    ChatAnswerResult,
+    ConversationMessage,
+)
 from app.context import BuiltContext, SourceRecord
 from app.llm import LLMError, LLMErrorCategory, LLMRequest, LLMResponse, LLMService
 
@@ -159,6 +164,32 @@ def test_generate_with_sources_returns_structured_result() -> None:
     assert result.sources[0].document_id == "document-1"
     assert result.sources[0].page_number == 2
     assert result.sources[0].chunk_id == "chunk-2"
+
+
+def test_generate_with_sources_uses_history_only_as_untrusted_context() -> None:
+    llm = FakeLLM("Срок составляет один год. [стр. 2]")
+    generator = AnswerGenerator(llm)
+    history = [
+        ConversationMessage(role="user", content="Какой срок у первого договора?"),
+        ConversationMessage(
+            role="assistant",
+            content="Первый договор действует один год. [стр. 1]",
+        ),
+    ]
+
+    generator.generate_with_sources(
+        "А у второго?",
+        make_context(make_source(2)),
+        conversation_history=history,
+    )
+
+    request = llm.requests[0]
+    assert "НАЧАЛО_ИСТОРИИ_БЕСЕДЫ" in request.prompt
+    assert "Какой срок у первого договора?" in request.prompt
+    assert "Первый договор действует один год." in request.prompt
+    assert "КОНЕЦ_ИСТОРИИ_БЕСЕДЫ" in request.prompt
+    assert "Текущий вопрос:\nА у второго?" in request.prompt
+    assert "не является источником фактов" in request.system_prompt
 
 
 def test_generate_with_sources_returns_source_references_without_text() -> None:

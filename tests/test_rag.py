@@ -1,6 +1,11 @@
 import httpx
 
-from app.answer import ANSWER_PROMPT_VERSION, AnswerGenerator, ChatAnswerResult
+from app.answer import (
+    ANSWER_PROMPT_VERSION,
+    AnswerGenerator,
+    ChatAnswerResult,
+    ConversationMessage,
+)
 from app.context import ContextBuilder
 from app.embeddings import EmbeddingService
 from app.llm import (
@@ -16,7 +21,11 @@ from app.retrieval import Retriever
 
 
 class FakeEmbeddingService(EmbeddingService):
+    def __init__(self):
+        self.embedded_texts = []
+
     def embed(self, text: str) -> list[float]:
+        self.embedded_texts.append(text)
         return [1.0, 0.0, 0.0]
 
     def embed_many(self, texts: list[str]) -> list[list[float]]:
@@ -189,3 +198,29 @@ def test_rag_pipeline_answer_with_sources():
     assert result.sources[0].document_id == "doc-1"
     assert result.sources[0].page_number == 3
     assert result.sources[0].chunk_id == "chunk-1"
+
+
+def test_rag_pipeline_uses_history_for_retrieval_and_answer():
+    embedding_service = FakeEmbeddingService()
+    llm = FakeLLMService()
+    pipeline = RAGPipeline(
+        retriever=Retriever(embedding_service, FakeVectorStore()),
+        context_builder=ContextBuilder(),
+        answer_generator=AnswerGenerator(llm),
+    )
+    retrieval_query = "Предыдущий вопрос: срок договора\nТекущий вопрос: А у второго?"
+    history = [
+        ConversationMessage(role="user", content="Каков срок первого договора?"),
+        ConversationMessage(role="assistant", content="Один год. [стр. 1]"),
+    ]
+
+    pipeline.answer_with_sources(
+        question="А у второго?",
+        retrieval_query=retrieval_query,
+        conversation_history=history,
+        document_ids=["doc-1"],
+    )
+
+    assert embedding_service.embedded_texts == [retrieval_query]
+    assert "Текущий вопрос:\nА у второго?" in llm.requests[0].prompt
+    assert "Каков срок первого договора?" in llm.requests[0].prompt

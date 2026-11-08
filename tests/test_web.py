@@ -1,4 +1,5 @@
 import hashlib
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -976,13 +977,51 @@ def test_chat_view_returns_404_for_missing(web_session_factory):
 
 def test_chat_view_renders_document_and_messages(web_session_factory):
     chat_id = add_web_chat(web_session_factory)
+    with web_session_factory() as session:
+        from app.models import Message, MessageRole
+
+        first_message = session.query(Message).filter_by(chat_id=chat_id).one()
+        first_message.created_at = datetime(2026, 1, 1, 10, 0)
+        session.add_all(
+            [
+                Message(
+                    chat_id=chat_id,
+                    role=MessageRole.ASSISTANT,
+                    content="Первый ответ",
+                    created_at=datetime(2026, 1, 1, 10, 1),
+                ),
+                Message(
+                    chat_id=chat_id,
+                    role=MessageRole.USER,
+                    content="Второй вопрос",
+                    created_at=datetime(2026, 1, 1, 10, 2),
+                ),
+                Message(
+                    chat_id=chat_id,
+                    role=MessageRole.ASSISTANT,
+                    content="Второй ответ",
+                    created_at=datetime(2026, 1, 1, 10, 3),
+                ),
+            ]
+        )
+        session.commit()
+
     application = create_app(session_factory=web_session_factory)
     with TestClient(application) as client:
         response = client.get(f"/chats/{chat_id}")
 
     assert response.status_code == 200
     assert "document.pdf" in response.text
-    assert "Тестовый вопрос" in response.text
+    expected_history = [
+        "Тестовый вопрос",
+        "Первый ответ",
+        "Второй вопрос",
+        "Второй ответ",
+    ]
+    positions = [response.text.index(message) for message in expected_history]
+    assert positions == sorted(positions)
+    assert response.text.count('class="message-card message-user"') == 2
+    assert response.text.count('class="message-card message-assistant"') == 2
 
 
 def test_send_message_empty_content_returns_422(web_session_factory):
@@ -1002,12 +1041,18 @@ def test_send_message_persists_user_and_assistant(web_session_factory, monkeypat
     chat_id = add_web_chat(web_session_factory)
 
     class FakeRAGPipeline:
+        def __init__(self):
+            self.answers = [
+                "Первый ответ. [стр. 1]",
+                "Второй ответ. [стр. 1]",
+            ]
+
         def answer_with_sources(self, question, document_id=None, **kwargs):
             from app.answer import ChatAnswerResult
             from app.context import SourceReference
 
             return ChatAnswerResult(
-                answer="Ответ по документу. [стр. 1]",
+                answer=self.answers.pop(0),
                 model_name="test-model",
                 sources=(
                     SourceReference(
@@ -1020,19 +1065,50 @@ def test_send_message_persists_user_and_assistant(web_session_factory, monkeypat
 
     from app import dependencies
 
-    monkeypatch.setattr(dependencies, "create_rag_pipeline", lambda: FakeRAGPipeline())
+    rag_pipeline = FakeRAGPipeline()
+    monkeypatch.setattr(
+        dependencies,
+        "create_rag_pipeline",
+        lambda: rag_pipeline,
+    )
 
     application = create_app(session_factory=web_session_factory)
     with TestClient(application) as client:
-        response = client.post(
+        first_response = client.post(
             f"/chats/{chat_id}/messages",
             data={"content": "Каков срок договора?"},
         )
+        second_response = client.post(
+            f"/chats/{chat_id}/messages",
+            data={"content": "А сколько длится второй?"},
+        )
+        history_response = client.get(f"/chats/{chat_id}")
 
-    assert response.status_code == 200
-    assert "Каков срок договора?" in response.text
-    assert "Ответ по документу. [стр. 1]" in response.text
-    assert "стр. 1" in response.text
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert history_response.status_code == 200
+    expected_history = [
+        "Каков срок договора?",
+        "Первый ответ. [стр. 1]",
+        "А сколько длится второй?",
+        "Второй ответ. [стр. 1]",
+    ]
+    positions = [history_response.text.index(message) for message in expected_history]
+    assert positions == sorted(positions)
+
+
+def test_send_message_rejects_messages_above_maximum_length(web_session_factory):
+    chat_id = add_web_chat(web_session_factory)
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.post(
+            f"/chats/{chat_id}/messages",
+            data={"content": "a" * 2001},
+        )
+
+    assert response.status_code == 422
+    assert "не должно превышать 2000 символов" in response.text
 
 
 def test_delete_chat_removes_record(web_session_factory):

@@ -619,6 +619,7 @@ def chat_view(
             "error": None,
             "content": "",
             "rag_result": None,
+            "max_question_chars": MAX_QUESTION_CHARS,
         },
     )
 
@@ -640,9 +641,14 @@ def send_message(
     content_stripped = content.strip()
     error = None
     rag_result = None
+    status_code = 200
 
     if not content_stripped:
         error = "Введите сообщение."
+        status_code = 422
+    elif len(content_stripped) > MAX_QUESTION_CHARS:
+        error = f"Сообщение не должно превышать {MAX_QUESTION_CHARS} символов."
+        status_code = 422
     else:
         try:
             chat_service = ChatService(
@@ -656,9 +662,13 @@ def send_message(
             )
             if rag_result.error is not None:
                 error = rag_result.error
+            session.commit()
         except Exception:
+            session.rollback()
             logger.exception("Chat message processing failed")
             error = "Не удалось отправить сообщение. Проверьте доступность служб."
+            rag_result = None
+            status_code = 503
 
     # Re-fetch chat and messages after possible state change
     chat = repository.get(chat_id)
@@ -673,8 +683,9 @@ def send_message(
             "error": error,
             "content": content,
             "rag_result": rag_result,
+            "max_question_chars": MAX_QUESTION_CHARS,
         },
-        status_code=422 if error and not rag_result else 200,
+        status_code=status_code,
     )
 
 

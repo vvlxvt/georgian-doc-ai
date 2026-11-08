@@ -1,4 +1,6 @@
-from app.answer import AnswerGenerator, ChatAnswerResult
+from collections.abc import Sequence
+
+from app.answer import AnswerGenerator, ChatAnswerResult, ConversationMessage
 from app.context import ContextBuilder
 from app.retrieval import Retriever
 
@@ -44,9 +46,11 @@ class RAGPipeline:
         score_threshold: float | None = None,
         document_id: str | None = None,
         document_ids: list[str] | None = None,
+        retrieval_query: str | None = None,
+        conversation_history: Sequence[ConversationMessage] = (),
     ) -> ChatAnswerResult:
         results = self.retriever.search(
-            query=question,
+            query=question if retrieval_query is None else retrieval_query,
             limit=limit,
             score_threshold=score_threshold,
             document_id=document_id,
@@ -58,4 +62,5 @@ class RAGPipeline:
         return self.answer_generator.generate_with_sources(
             question=question,
             context=context,
+            conversation_history=conversation_history,
         )

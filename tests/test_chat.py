@@ -1,6 +1,6 @@
 import pytest
 
-from app.answer import ChatAnswerResult
+from app.answer import ChatAnswerResult, ConversationMessage
 from app.chat import ChatSendResult, ChatService
 from app.context import SourceReference
 from app.models import Chat, Document, Message, MessageRole
@@ -12,9 +12,11 @@ class FakeRAGPipeline:
         self.answer_text = answer_text
         self.should_fail = should_fail
         self.calls = []
+        self.last_kwargs = {}
 
     def answer_with_sources(self, question: str, document_ids=None, **kwargs):
         self.calls.append((question, document_ids))
+        self.last_kwargs = kwargs
         if self.should_fail:
             raise RuntimeError("LLM provider unavailable")
         return ChatAnswerResult(
@@ -35,6 +37,7 @@ class FakeChatRepository(ChatRepository):
         super().__init__(session)
         self._chats = chats or {}
         self.added_messages = []
+        self.history_messages = []
         self.recent_calls = []
 
     def get(self, chat_id: str):
@@ -53,7 +56,7 @@ class FakeChatRepository(ChatRepository):
 
     def get_recent_messages(self, chat_id: str, limit: int):
         self.recent_calls.append((chat_id, limit))
-        return []
+        return [*self.history_messages, *self.added_messages][-limit:]
 
 
 def make_chat(chat_id: str, *document_ids: str) -> Chat:
@@ -172,3 +175,45 @@ def test_send_message_loads_bounded_history(session):
     assert len(repository.recent_calls) == 1
     _, limit = repository.recent_calls[0]
     assert limit == 3 * 2 + 1
+
+
+def test_send_message_uses_recent_history_for_retrieval_and_answer(session):
+    repository = FakeChatRepository(session)
+    chat = make_chat("chat-1", "doc-1")
+    repository._chats["chat-1"] = chat
+    repository.history_messages = [
+        Message(
+            id="previous-user",
+            role=MessageRole.USER,
+            content="Какой срок у первого договора?",
+        ),
+        Message(
+            id="previous-assistant",
+            role=MessageRole.ASSISTANT,
+            content="Первый договор действует один год. [стр. 1]",
+        ),
+    ]
+    session.add(chat)
+    session.commit()
+
+    rag = FakeRAGPipeline()
+    service = ChatService(session, repository, rag)
+
+    service.send_message("chat-1", "А у второго?")
+
+    assert rag.calls == [("А у второго?", ["doc-1"])]
+    assert rag.last_kwargs["retrieval_query"] == (
+        "Предыдущий вопрос: Какой срок у первого договора?\n"
+        "Предыдущий ответ: Первый договор действует один год. [стр. 1]\n"
+        "Текущий вопрос: А у второго?"
+    )
+    assert rag.last_kwargs["conversation_history"] == [
+        ConversationMessage(
+            role="user",
+            content="Какой срок у первого договора?",
+        ),
+        ConversationMessage(
+            role="assistant",
+            content="Первый договор действует один год. [стр. 1]",
+        ),
+    ]

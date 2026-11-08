@@ -24,10 +24,10 @@
 
   <div class="chat-layout">
     <div class="chat-main">
-      <div class="message-list" aria-label="История чата">
+      <ol class="message-list" aria-label="История чата">
         {% if messages %}
           {% for message in messages %}
-          <div class="message-card message-{{ message.role }}">
+          <li class="message-card message-{{ message.role }}">
             <div class="message-header">
               <span class="message-role">{{ "Вы" if message.role == "user" else "Ассистент" }}</span>
               <span class="message-time">{{ message.created_at_display }}</span>
@@ -41,14 +41,14 @@
                 {% endfor %}
               </div>
             {% endif %}
-          </div>
+          </li>
           {% endfor %}
         {% else %}
-          <div class="empty-chat">
+          <li class="empty-chat">
             <p>Сообщений ещё нет. Напишите первое сообщение ниже.</p>
-          </div>
+          </li>
         {% endif %}
-      </div>
+      </ol>
 
       <form
         class="chat-composer"
@@ -64,6 +64,7 @@
           type="text"
           placeholder="Напишите вопрос..."
           value="{{ content or '' }}"
+          maxlength="{{ max_question_chars }}"
           autocomplete="off"
           required
         >

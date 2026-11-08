@@ -28,14 +28,13 @@ Reusable components confirmed in the repository:
 
 1. `AGENTS.md` currently says not to persist questions, answers, prompts, or retrieval context, and says migrations require explicit approval. This requested feature requires retaining user and assistant message text, plus one migration. No implementation is authorized until the user approves Phase 2 with this persistence scope in view.
 2. RAG already validates citations before returning an answer, while source records are only available as `BuiltContext.sources` inside `AnswerGenerator`. Persisting source references needs a small explicit return contract (for example, a structured chat result) or an injected callback/result method; do not reimplement citation parsing or bypass `AnswerGenerator` validation.
-3. Follow-up query rewriting is not currently a RAG feature. The initial implementation should decide whether to form a bounded retrieval query from recent messages or add a provider-neutral rewrite operation. Any rewrite must preserve the original question, keep history out of evidence, and fall back to the original query if rewriting fails. Do not send unbounded chat history.
+3. Follow-up retrieval uses a bounded chronological window of recent user/assistant messages concatenated with the current question; no extra LLM query-rewrite call is made. The original question is passed separately to answer generation, with history marked as untrusted context for resolving references only. Retrieved chunks from the chat's selected documents remain the only evidence for answer claims.
 4. Existing document deletion can remove vectors before the database commit. Chat deletion must be covered by ORM cascades and the new migration; test SQLite foreign-key behavior because relying on ORM cascades and relying on database cascades differ.
 5. LLM calls are synchronous and may be billable. Persisting the user message before a provider call means failed calls leave a user message without an assistant answer; this is intentional chat history behavior unless product direction chooses a different transaction policy. Never add unbounded retries or log stored message content.
 6. UI remains local-only on `127.0.0.1`; the new mutating routes should follow the existing Origin check and server-rendered Jinja patterns.
 
 ## Open decisions to resolve before dependent implementation
 
-- Should history-aware retrieval use direct, bounded concatenation of recent turns or an additional LLM query-rewrite call? Recommended first MVP: bounded recent turns used only to produce a retrieval query via existing provider-neutral LLM capability, with fallback to the original question; verify an extra call's cost/latency is acceptable before implementing. If not, ship original-question-only retrieval and defer rewriting.
 - Which source fields should be persisted/displayed: page number only, or document ID plus page number and source/chunk IDs? Recommended: document ID, page number, and chunk ID/source ID; never persist retrieved source text as chat metadata.
 - On LLM failure, keep the user message and show a retry/new-message affordance, or remove it? Recommended: retain it and show the error without fabricating an assistant message.
 
@@ -81,7 +80,7 @@ Reusable components confirmed in the repository:
 - **Goal:** Orchestrate bounded follow-up questions scoped to the chat's selected documents.
 - **Status:** DONE
 - **Dependencies:** CHAT-02, CHAT-03
-- **Scope:** Add a chat service that validates chat/document, stores the user message, loads a configured bounded number of recent turns, derives a retrieval query according to the approved open-decision choice, calls existing RAG with exactly the associated `document_id`, then stores assistant text and validated source references. Keep history separate from evidence and treat it as untrusted. Preserve original question. If rewriting is selected and fails, use the original question. Keep user message on LLM failure and return a typed/error result without persisting a fake assistant response. Do not persist prompts, retrieved text, or model raw responses.
+- **Scope:** Add a chat service that validates chat/document, stores the user message, loads a configured bounded number of recent turns, derives a retrieval query from those turns plus the current question, calls existing RAG with exactly the associated document IDs, then stores assistant text and validated source references. Keep history separate from evidence and treat it as untrusted. Preserve the original question for answer generation. Keep the user message on LLM failure and return a typed/error result without persisting a fake assistant response. Do not persist prompts, retrieved text, or model raw responses.
 - **Minimal tests:** Unit tests with fake repository/RAG/LLM collaborators for success, document scoping, history limit, follow-up query, rewrite fallback if implemented, source persistence, missing/deleted chat, and provider failure behavior.
 - **Acceptance criteria:** One service owns chat orchestration; retrieval is restricted to the selected documents; history is bounded and cannot override system instructions; answer sources are exactly those validated by the RAG path; failure semantics match the approved decision.
 
@@ -132,4 +131,3 @@ Reusable components confirmed in the repository:
 ## Approval gate
 
 Phase 1 is complete. Implementation tasks remain `TODO` until the user explicitly approves Phase 2. Before implementation, resolve the open decisions above and reconcile the requested persistence/migration scope with the explicit approval gate in `AGENTS.md`.
-

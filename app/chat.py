@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from app.answer import ChatAnswerResult
+from app.answer import ChatAnswerResult, ConversationMessage
 from app.context import SourceReference
 from app.models import Message, MessageRole
 from app.rag import RAGPipeline
@@ -70,19 +70,35 @@ class ChatService:
         )
         self.session.flush()
 
-        # Load bounded recent history. Kept separate from evidence; untrusted.
-        self.chat_repository.get_recent_messages(
+        # Keep history bounded and separate from document evidence.
+        recent_messages = self.chat_repository.get_recent_messages(
             chat_id=chat_id,
             limit=self.max_history_turns * 2 + 1,
         )
+        conversation_history = [
+            ConversationMessage(
+                role=("user" if message.role == MessageRole.USER else "assistant"),
+                content=message.content,
+            )
+            for message in recent_messages
+            if message.id != user_message.id
+        ]
 
-        # MVP: retrieval query is the current user message as-is.
-        retrieval_query = content
+        history_query = "\n".join(
+            f"{'Предыдущий вопрос' if message.role == 'user' else 'Предыдущий ответ'}: "
+            f"{message.content}"
+            for message in conversation_history
+        )
+        retrieval_query = (
+            f"{history_query}\nТекущий вопрос: {content}" if history_query else content
+        )
 
         try:
             answer_result: ChatAnswerResult = self.rag_pipeline.answer_with_sources(
-                question=retrieval_query,
+                question=content,
                 document_ids=document_ids,
+                retrieval_query=retrieval_query,
+                conversation_history=conversation_history,
             )
         except Exception as exc:
             # LLM failure: keep the user message, do not fabricate an assistant answer.
