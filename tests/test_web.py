@@ -961,6 +961,8 @@ def test_create_chat_with_multiple_documents(web_session_factory):
 
         chat = session.query(Chat).one()
         assert {document.id for document in chat.documents} == set(document_ids)
+        assert chat.title.startswith("first.pdf + second.pdf — ")
+        assert chat.title.endswith(chat.created_at.strftime("%Y-%m-%d"))
 
 
 def test_create_chat_requires_at_least_one_document(web_session_factory):

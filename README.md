@@ -183,8 +183,8 @@ retrieve context only from the selected documents' indexed chunks.
 - **No authentication:** The initial chat MVP has no login or access control.
 - **History limit:** Retrieval uses a bounded window of recent turns; older
   history is not sent to the LLM. Recent turns help resolve follow-up questions
-  and form the retrieval query, but only selected-document chunks are evidence
-  for answers.
+  and form the retrieval query, capped at 6,000 characters. Only
+  selected-document chunks are evidence for answers.
 - **Citations only:** Stored source references contain document ID, page
   number, and chunk ID — never the retrieved source text itself.
 - **No automatic retries:** LLM failures leave the user message persisted
@@ -192,8 +192,8 @@ retrieve context only from the selected documents' indexed chunks.
 
 ### Limitations
 
-- Chat titles are not auto-generated; they default to "New
-  chat".
+- New chat titles use the selected document filename(s) and creation date
+  (`YYYY-MM-DD`); multi-document names are joined in selection order.
 - Deleting a document removes its association with chats but preserves
   their messages and any associations with other documents. Qdrant vectors are
   removed before the SQL commit.

@@ -24,18 +24,52 @@ def test_repository_creates_lists_and_updates_chats(session):
     repository = ChatRepository(session)
 
     chat = repository.create([document.id, second_document.id])
+    generated_title = chat.title
+    assert generated_title.startswith("contract.pdf + appendix.pdf — ")
+    assert generated_title.endswith(chat.created_at.strftime("%Y-%m-%d"))
+
     session.commit()
     repository.update_title(chat, "Срок договора")
     session.commit()
 
     chats = repository.list_for_document(document.id)
-
     assert [item.id for item in chats] == [chat.id]
+    assert chat.title == "Срок договора"
     assert chats[0].title == "Срок договора"
     assert {item.id for item in repository.get(chat.id).documents} == {
         document.id,
         second_document.id,
     }
+
+
+def test_repository_preserves_explicit_chat_title(session):
+    document = create_document(session)
+    repository = ChatRepository(session)
+
+    chat = repository.create([document.id], title="Custom title")
+
+    assert chat.title == "Custom title"
+
+
+def test_repository_names_single_document_chat_with_creation_date(session):
+    document = create_document(session)
+    repository = ChatRepository(session)
+
+    chat = repository.create([document.id])
+
+    assert chat.title == f"contract.pdf — {chat.created_at:%Y-%m-%d}"
+
+
+def test_repository_truncates_generated_title_to_column_length(session):
+    document = Document(filename=f"{'a' * 255}.pdf", file_hash="long-document")
+    session.add(document)
+    session.commit()
+    repository = ChatRepository(session)
+
+    chat = repository.create([document.id])
+
+    assert len(chat.title) <= 255
+    assert chat.title.endswith(chat.created_at.strftime("%Y-%m-%d"))
 
 
 def test_repository_rejects_empty_or_unknown_document_ids(session):

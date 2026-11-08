@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import Chat, Document, DocumentChunk, Message, MessageRole
 
+CHAT_TITLE_MAX_LENGTH = 255
+
 
 class DocumentChunkRepository:
     def __init__(self, session: Session):
@@ -82,7 +84,7 @@ class ChatRepository:
     def create(
         self,
         document_ids: list[str],
-        title: str = "New chat",
+        title: str | None = None,
     ) -> Chat:
         selected_ids = list(dict.fromkeys(document_ids))
         if not selected_ids:
@@ -95,9 +97,20 @@ class ChatRepository:
         if len(documents_by_id) != len(selected_ids):
             raise ValueError("one or more selected documents were not found")
 
+        created_at = datetime.now(UTC)
+        if title is None:
+            document_names = " + ".join(
+                documents_by_id[document_id].filename for document_id in selected_ids
+            )
+            date_suffix = f" — {created_at:%Y-%m-%d}"
+            title = (
+                document_names[: CHAT_TITLE_MAX_LENGTH - len(date_suffix)] + date_suffix
+            )
+
         chat = Chat(
             documents=[documents_by_id[document_id] for document_id in selected_ids],
             title=title,
+            created_at=created_at,
         )
         self.session.add(chat)
         self.session.flush()
