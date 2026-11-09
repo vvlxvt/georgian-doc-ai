@@ -75,6 +75,7 @@ def test_static_pending_script_is_mounted():
     assert "messageList.append(messageCard)" in response.text
     assert 'messageInput.value = ""' in response.text
     assert "submittedContent.name = messageInput.name" in response.text
+    assert "form.querySelector('input[name=\"chat_ids\"]:checked')" in response.text
 
 
 @pytest.mark.parametrize(
@@ -840,9 +841,10 @@ def add_web_chat(
     session_factory,
     document_id="doc-1",
     title="Test chat",
+    file_hash="d" * 64,
 ):
     with session_factory() as session:
-        document = Document(filename="document.pdf", file_hash="d" * 64)
+        document = Document(filename="document.pdf", file_hash=file_hash)
         session.add(document)
         session.flush()
         from app.models import Chat, Message, MessageRole
@@ -902,6 +904,8 @@ def test_shared_layout_displays_recent_chats_in_right_sidebar(web_session_factor
     assert '<aside class="chat-sidebar" aria-label="Чаты">' in chats_response.text
     assert "Чат по договору" in chats_response.text
     assert f'href="http://testserver/chats/{chat_id}"' in chats_response.text
+    assert 'name="chat_ids"' in chats_response.text
+    assert "Удалить выбранное" in chats_response.text
     assert 'class="chat-sidebar-link is-active"' in chat_response.text
     assert f'href="http://testserver/chats/{chat_id}"' in chat_response.text
     assert "В процессе" in chat_response.text
@@ -910,6 +914,8 @@ def test_shared_layout_displays_recent_chats_in_right_sidebar(web_session_factor
     assert 'aria-label="Отправить вопрос" disabled' in chats_response.text
     assert 'placeholder="Напишите вопрос..."' in chat_response.text
     assert '<span aria-hidden="true">▶</span>' in chat_response.text
+    assert 'class="chat-aside"' not in chat_response.text
+    assert 'class="chat-main"' in chat_response.text
 
 
 def test_shared_layout_lists_all_chats_without_limit(web_session_factory):
@@ -1138,6 +1144,61 @@ def test_delete_chat_removes_record(web_session_factory):
         assert session.get(Chat, chat_id) is None
 
 
+def test_delete_selected_chats_removes_only_selected_records(web_session_factory):
+    selected_chat_ids = [
+        add_web_chat(
+            web_session_factory,
+            document_id=f"selected-{index}",
+            file_hash=f"{index + 1:064x}",
+        )
+        for index in range(2)
+    ]
+    other_chat_id = add_web_chat(
+        web_session_factory,
+        document_id="keep-chat",
+        file_hash="3" * 64,
+    )
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.post(
+            "/chats/delete-selected",
+            data={"chat_ids": selected_chat_ids},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    with web_session_factory() as session:
+        from app.models import Chat, Message
+
+        assert all(session.get(Chat, chat_id) is None for chat_id in selected_chat_ids)
+        assert all(
+            session.query(Message).filter_by(chat_id=chat_id).count() == 0
+            for chat_id in selected_chat_ids
+        )
+        assert session.get(Chat, other_chat_id) is not None
+
+
+def test_delete_selected_chats_without_selection_does_not_delete_anything(
+    web_session_factory,
+):
+    chat_id = add_web_chat(web_session_factory)
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.post(
+            "/chats/delete-selected",
+            data={},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    with web_session_factory() as session:
+        from app.models import Chat
+
+        assert session.get(Chat, chat_id) is not None
+
+
 def test_chat_mutating_routes_reject_cross_origin(web_session_factory):
     chat_id = add_web_chat(web_session_factory)
     with TestClient(app) as client:
@@ -1150,9 +1211,15 @@ def test_chat_mutating_routes_reject_cross_origin(web_session_factory):
             f"/chats/{chat_id}/delete",
             headers={"Origin": "https://untrusted.example"},
         )
+        response_delete_selected = client.post(
+            "/chats/delete-selected",
+            data={"chat_ids": [chat_id]},
+            headers={"Origin": "https://untrusted.example"},
+        )
 
     assert response.status_code == 403
     assert response_delete.status_code == 403
+    assert response_delete_selected.status_code == 403
 
 
 def test_chat_list_link_in_navigation(web_session_factory):

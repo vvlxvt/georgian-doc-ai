@@ -22,65 +22,47 @@
     <div class="alert alert-error" role="alert">{{ error }}</div>
   {% endif %}
 
-  <div class="chat-layout">
-    <div class="chat-main">
-      <ol class="message-list" aria-label="История чата">
-        {% if messages %}
-          {% for message in messages %}
-          <li class="message-card message-{{ message.role }}">
-            <div class="message-header">
-              <span class="message-role">{{ "Вы" if message.role == "user" else "Ассистент" }}</span>
-              <span class="message-time">{{ message.created_at_display }}</span>
-            </div>
-            <div class="message-text">{{ message.content }}</div>
-          </li>
-          {% endfor %}
-        {% else %}
-          <li class="empty-chat">
-            <p>Сообщений ещё нет. Напишите первое сообщение ниже.</p>
-          </li>
-        {% endif %}
-      </ol>
+  <div class="chat-main">
+    <ol class="message-list" aria-label="История чата">
+      {% if messages %}
+        {% for message in messages %}
+        <li class="message-card message-{{ message.role }}">
+          <div class="message-header">
+            <span class="message-role">{{ "Вы" if message.role == "user" else "Ассистент" }}</span>
+            <span class="message-time">{{ message.created_at_display }}</span>
+          </div>
+          <div class="message-text">{{ message.content }}</div>
+        </li>
+        {% endfor %}
+      {% else %}
+        <li class="empty-chat">
+          <p>Сообщений ещё нет. Напишите первое сообщение ниже.</p>
+        </li>
+      {% endif %}
+    </ol>
 
-      <form
-        class="chat-composer"
-        action="{{ url_for('send_message', chat_id=chat.id) }}"
-        method="post"
-        data-pending-message="Формируем ответ по выбранным документам..."
-        data-pending-label="..."
+    <form
+      class="chat-composer"
+      action="{{ url_for('send_message', chat_id=chat.id) }}"
+      method="post"
+      data-pending-message="Формируем ответ по выбранным документам..."
+      data-pending-label="..."
+    >
+      <label class="visually-hidden" for="content">Ваш вопрос</label>
+      <input
+        id="content"
+        name="content"
+        type="text"
+        placeholder="Напишите вопрос..."
+        value="{{ content or '' }}"
+        maxlength="{{ max_question_chars }}"
+        autocomplete="off"
+        required
       >
-        <label class="visually-hidden" for="content">Ваш вопрос</label>
-        <input
-          id="content"
-          name="content"
-          type="text"
-          placeholder="Напишите вопрос..."
-          value="{{ content or '' }}"
-          maxlength="{{ max_question_chars }}"
-          autocomplete="off"
-          required
-        >
-        <button class="button-primary" type="submit" aria-label="Отправить вопрос">
-          <span aria-hidden="true">▶</span>
-        </button>
-        <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
-      </form>
-
-    </div>
-    <aside class="chat-aside">
-      <h2>Действия</h2>
-      <form
-        action="{{ url_for('delete_chat', chat_id=chat.id) }}"
-        method="post"
-        data-pending-message="Удаление чата..."
-        data-pending-label="Удаляем чат..."
-        onsubmit="return confirm('Удалить этот чат и все его сообщения?');"
-      >
-        <button class="button button-danger" type="submit"><span aria-hidden="true">🗑</span> Удалить чат</button>
-      </form>
-      <p class="aside-note">
-        Удаление чата удаляет все его сообщения. Документы остаются в библиотеке.
-      </p>
-    </aside>
+      <button class="button-primary" type="submit" aria-label="Отправить вопрос">
+        <span aria-hidden="true">▶</span>
+      </button>
+      <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
+    </form>
   </div>
 {% endblock %}

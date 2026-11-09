@@ -38,6 +38,7 @@ def create_app(
         is_chat_mutating = request.url.path.startswith("/chats/") and (
             request.url.path.endswith("/messages")
             or request.url.path.endswith("/delete")
+            or request.url.path == "/chats/delete-selected"
         )
         if request.method == "POST" and (
             request.url.path in {"/upload", "/ask"}

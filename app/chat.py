@@ -10,6 +10,42 @@ from app.rag import RAGPipeline
 from app.repositories import ChatRepository
 
 CHAT_MAX_HISTORY_TURNS = 5
+CHAT_MAX_HISTORY_CHARS = 6000
+
+
+def _build_conversation_history(
+    messages: list[Message],
+    current_message_id: str,
+) -> list[ConversationMessage]:
+    history = []
+    remaining_chars = CHAT_MAX_HISTORY_CHARS
+
+    for message in reversed(messages):
+        if message.id == current_message_id:
+            continue
+        if remaining_chars <= 0:
+            break
+
+        content = message.content
+        if len(content) > remaining_chars:
+            content = content[:remaining_chars]
+            history.append(
+                ConversationMessage(
+                    role="user" if message.role == MessageRole.USER else "assistant",
+                    content=content,
+                )
+            )
+            break
+
+        history.append(
+            ConversationMessage(
+                role="user" if message.role == MessageRole.USER else "assistant",
+                content=content,
+            )
+        )
+        remaining_chars -= len(content)
+
+    return list(reversed(history))
 
 
 @dataclass(frozen=True)
@@ -75,14 +111,10 @@ class ChatService:
             chat_id=chat_id,
             limit=self.max_history_turns * 2 + 1,
         )
-        conversation_history = [
-            ConversationMessage(
-                role=("user" if message.role == MessageRole.USER else "assistant"),
-                content=message.content,
-            )
-            for message in recent_messages
-            if message.id != user_message.id
-        ]
+        conversation_history = _build_conversation_history(
+            recent_messages,
+            current_message_id=user_message.id,
+        )
 
         history_query = "\n".join(
             f"{'Предыдущий вопрос' if message.role == 'user' else 'Предыдущий ответ'}: "

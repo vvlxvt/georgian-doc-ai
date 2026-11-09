@@ -1,7 +1,7 @@
 import pytest
 
 from app.answer import ChatAnswerResult, ConversationMessage
-from app.chat import ChatSendResult, ChatService
+from app.chat import CHAT_MAX_HISTORY_CHARS, ChatSendResult, ChatService
 from app.context import SourceReference
 from app.models import Chat, Document, Message, MessageRole
 from app.repositories import ChatRepository
@@ -217,3 +217,38 @@ def test_send_message_uses_recent_history_for_retrieval_and_answer(session):
             content="Первый договор действует один год. [стр. 1]",
         ),
     ]
+
+
+def test_send_message_caps_history_chars_and_keeps_most_recent_context(session):
+    repository = FakeChatRepository(session)
+    chat = make_chat("chat-1", "doc-1")
+    repository._chats["chat-1"] = chat
+    repository.history_messages = [
+        Message(id="old-user", role=MessageRole.USER, content="old " * 1000),
+        Message(
+            id="old-assistant",
+            role=MessageRole.ASSISTANT,
+            content="old answer " * 1000,
+        ),
+        Message(
+            id="recent-user",
+            role=MessageRole.USER,
+            content="Recent question: " + "details " * 400,
+        ),
+        Message(
+            id="recent-assistant",
+            role=MessageRole.ASSISTANT,
+            content="Recent answer: " + "details " * 400,
+        ),
+    ]
+    session.add(chat)
+    session.commit()
+
+    rag = FakeRAGPipeline()
+    ChatService(session, repository, rag).send_message("chat-1", "And next?")
+
+    history = rag.last_kwargs["conversation_history"]
+    assert sum(len(message.content) for message in history) <= CHAT_MAX_HISTORY_CHARS
+    assert history[-1].content.startswith("Recent answer:")
+    assert history[0].content.startswith("Recent question:")
+    assert all("old " not in message.content for message in history)

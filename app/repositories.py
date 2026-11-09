@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
@@ -148,6 +148,18 @@ class ChatRepository:
     def delete(self, chat: Chat) -> None:
         self.session.delete(chat)
 
+    def delete_many(self, chat_ids: list[str]) -> int:
+        selected_ids = list(dict.fromkeys(chat_ids))
+        if not selected_ids:
+            return 0
+
+        chats = self.session.scalars(
+            select(Chat).where(Chat.id.in_(selected_ids))
+        ).all()
+        for chat in chats:
+            self.session.delete(chat)
+        return len(chats)
+
     def add_message(
         self,
         chat_id: str,
@@ -155,11 +167,25 @@ class ChatRepository:
         content: str,
         sources_json: str | None = None,
     ) -> Message:
+        created_at = datetime.now(UTC)
+        latest_message = self.session.scalar(
+            select(Message)
+            .where(Message.chat_id == chat_id)
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(1)
+        )
+        if latest_message is not None:
+            latest_created_at = latest_message.created_at
+            if latest_created_at.tzinfo is None:
+                latest_created_at = latest_created_at.replace(tzinfo=UTC)
+            created_at = max(created_at, latest_created_at + timedelta(microseconds=1))
+
         message = Message(
             chat_id=chat_id,
             role=role,
             content=content,
             sources_json=sources_json,
+            created_at=created_at,
         )
         self.session.add(message)
         chat = self.session.get(Chat, chat_id)

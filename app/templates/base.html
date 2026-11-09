@@ -66,21 +66,44 @@
             <a href="{{ url_for('chats') }}">Все</a>
           </div>
           {% if sidebar_chats %}
-            <nav class="chat-sidebar-list" aria-label="Список чатов">
-              {% for chat in sidebar_chats %}
-                {% set chat_url = url_for('chat_view', chat_id=chat.id) %}
-                <a
-                  class="chat-sidebar-link{% if request.url.path == chat_url.path %} is-active{% endif %}"
-                  href="{{ chat_url }}"
-                  {% if request.url.path == chat_url.path %}aria-current="page"{% endif %}
-                >
-                  {{ chat.title or "Без названия" }}
-                  {% if request.url.path == chat_url.path %}
-                    <span class="chat-sidebar-status">В процессе</span>
-                  {% endif %}
-                </a>
-              {% endfor %}
-            </nav>
+            <form
+              class="chat-sidebar-delete-form"
+              action="{{ url_for('delete_selected_chats') }}"
+              method="post"
+              data-confirm-message="Удалить выбранные чаты и все их сообщения?"
+              data-pending-message="Удаляем выбранные чаты..."
+              data-pending-label="Удаление..."
+            >
+              <nav class="chat-sidebar-list" aria-label="Список чатов">
+                {% for chat in sidebar_chats %}
+                  {% set chat_url = url_for('chat_view', chat_id=chat.id) %}
+                  <div class="chat-sidebar-item">
+                    <input
+                      id="select-chat-{{ chat.id }}"
+                      class="chat-sidebar-checkbox"
+                      type="checkbox"
+                      name="chat_ids"
+                      value="{{ chat.id }}"
+                      aria-label="Выбрать чат {{ chat.title or 'Без названия' }} для удаления"
+                    >
+                    <a
+                      class="chat-sidebar-link{% if request.url.path == chat_url.path %} is-active{% endif %}"
+                      href="{{ chat_url }}"
+                      {% if request.url.path == chat_url.path %}aria-current="page"{% endif %}
+                    >
+                      {{ chat.title or "Без названия" }}
+                      {% if request.url.path == chat_url.path %}
+                        <span class="chat-sidebar-status">В процессе</span>
+                      {% endif %}
+                    </a>
+                  </div>
+                {% endfor %}
+              </nav>
+              <button class="button button-danger chat-sidebar-delete" type="submit">
+                Удалить выбранное
+              </button>
+              <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
+            </form>
           {% else %}
             <p class="chat-sidebar-empty">Сохранённых чатов пока нет.</p>
           {% endif %}

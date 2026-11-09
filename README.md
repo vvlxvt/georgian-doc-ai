@@ -174,6 +174,7 @@ retrieve context only from the selected documents' indexed chunks.
 | `/chats` | POST | Create a chat from selected documents (`document_ids` form fields) |
 | `/chats/{id}` | GET | View a chat with message history |
 | `/chats/{id}/messages` | POST | Send a message in a chat (`content` form field) |
+| `/chats/delete-selected` | POST | Delete selected chats and their messages (`chat_ids` form fields) |
 | `/chats/{id}/delete` | POST | Delete a chat and all its messages |
 
 ### Constraints

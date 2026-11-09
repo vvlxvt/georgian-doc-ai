@@ -693,6 +693,16 @@ def delete_chat(
     return RedirectResponse(url=router.url_path_for("chats"), status_code=303)
 
 
+@router.post("/chats/delete-selected", name="delete_selected_chats")
+def delete_selected_chats(
+    chat_ids: list[str] = Form(default=[]),
+    session: Session = Depends(get_session),
+):
+    ChatRepository(session).delete_many(chat_ids)
+    session.commit()
+    return RedirectResponse(url=router.url_path_for("chats"), status_code=303)
+
+
 @router.get("/health", name="health")
 def health() -> dict[str, str]:
     return {"status": "ok"}

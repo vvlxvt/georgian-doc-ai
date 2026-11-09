@@ -164,11 +164,14 @@ LLM_IMPLEMENTATION_QUEUE.md предложенные улучшения (не о
 - `GET/POST /ask` — вопрос с выбором документов, ответ через `RAGPipeline.answer`
 - `GET/POST /chats`, `GET /chats/{id}` — список чатов, создание и просмотр чата с сообщениями
 - `POST /chats/{id}/messages` — отправка сообщения через `ChatService` (сохраняет пользовательское + ассистентское сообщения, `sources_json`)
+- `POST /chats/delete-selected` — удаление выбранных чатов и их сообщений
 - `POST /chats/{id}/delete`, `GET /health`
 
 Защита: проверка `Origin` при мутирующих POST-запросах (same-only). Текст интерфейса на русском. UI bind только `127.0.0.1`.
 
 Шаблоны: `app/templates/` (`base.html`, `home.html`, `documents.html`, `upload.html`, `ask.html`, `chats.html`, `chat.html`).
+
+В правом sidebar у чатов есть чекбоксы и кнопка удаления выбранных чатов; POST обрабатывает `ChatRepository.delete_many()` с ORM-cascade сообщений и same-origin проверкой.
 
 Чат:
 - Новые чаты автоматически получают название из имени выбранного документа и даты создания в UTC (`YYYY-MM-DD`); при нескольких документах имена идут в порядке выбора.

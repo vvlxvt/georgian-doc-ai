@@ -1,5 +1,18 @@
 "use strict";
 
+document.querySelectorAll(".chat-sidebar-delete-form").forEach((form) => {
+  form.addEventListener("submit", (event) => {
+    if (!form.querySelector('input[name="chat_ids"]:checked')) {
+      event.preventDefault();
+      const pendingStatus = form.querySelector("[data-pending-status]");
+      if (pendingStatus) {
+        pendingStatus.textContent = "Выберите чаты для удаления.";
+        pendingStatus.hidden = false;
+      }
+    }
+  });
+});
+
 document.querySelectorAll("form[data-pending-message]").forEach((form) => {
   form.addEventListener("submit", (event) => {
     if (event.defaultPrevented || form.getAttribute("aria-busy") === "true") {
