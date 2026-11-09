@@ -68,7 +68,7 @@ TEMPLATE_DIRECTORY = Path(__file__).parent / "templates"
 
 
 def _chat_sidebar_context(request: Request) -> dict:
-    if not request.url.path.startswith("/chats"):
+    if not request.url.path.startswith("/chats/"):
         return {"sidebar_chats": []}
 
     session = request.app.state.session_factory()

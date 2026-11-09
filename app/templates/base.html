@@ -14,7 +14,7 @@
   </head>
   <body>
     <a class="skip-link" href="#main-content">Перейти к содержимому</a>
-    <div class="app-shell{% if request.url.path.startswith('/chats') %} has-chat-sidebar{% endif %}">
+    <div class="app-shell{% if request.url.path.startswith('/chats/') %} has-chat-sidebar{% endif %}">
       <aside class="site-sidebar">
         <a class="brand" href="{{ url_for('home') }}" aria-label="Georgian Document RAG — главная">
           <span class="brand-mark" aria-hidden="true">G</span>
@@ -59,7 +59,7 @@
           <span>Ответы формируются по содержимому источников</span>
         </footer>
       </div>
-      {% if request.url.path.startswith('/chats') %}
+      {% if request.url.path.startswith('/chats/') %}
         <aside class="chat-sidebar" aria-label="Чаты">
           <div class="chat-sidebar-heading">
             <h2>Чаты</h2>

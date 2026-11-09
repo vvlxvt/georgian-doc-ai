@@ -885,6 +885,8 @@ def test_chats_list_renders_existing(web_session_factory):
     assert "document.pdf" in response.text
     assert '<section class="page-heading chats-page-heading"' in response.text
     assert '<h1 id="page-title">Хранимые чаты</h1>' in response.text
+    assert "<th>Действие</th>" not in response.text
+    assert "Удалить чат и все его сообщения?" not in response.text
 
 
 def test_shared_layout_displays_recent_chats_in_right_sidebar(web_session_factory):
@@ -903,17 +905,20 @@ def test_shared_layout_displays_recent_chats_in_right_sidebar(web_session_factor
     assert home_response.status_code == 200
     assert "chat-sidebar" not in home_response.text
     assert "Чат по договору" not in home_response.text
-    assert '<aside class="chat-sidebar" aria-label="Чаты">' in chats_response.text
+    assert "chat-sidebar" not in chats_response.text
     assert "Чат по договору" in chats_response.text
     assert f'href="http://testserver/chats/{chat_id}"' in chats_response.text
-    assert 'name="chat_ids"' in chats_response.text
-    assert "Удалить выбранное" in chats_response.text
+    assert 'class="striped-table"' in chats_response.text
+    assert '<aside class="chat-sidebar" aria-label="Чаты">' in chat_response.text
+    assert "Чат по договору" in chat_response.text
+    assert 'name="chat_ids"' in chat_response.text
+    assert "Удалить выбранное" in chat_response.text
     assert 'class="chat-sidebar-link is-active"' in chat_response.text
     assert f'href="http://testserver/chats/{chat_id}"' in chat_response.text
     assert "В процессе" in chat_response.text
-    assert "Новый чат" not in chats_response.text
-    assert 'placeholder="Выберите чат"' in chats_response.text
-    assert 'aria-label="Отправить вопрос" disabled' in chats_response.text
+    assert "Новый чат" not in chat_response.text
+    assert 'placeholder="Выберите чат"' not in chats_response.text
+    assert 'aria-label="Отправить вопрос" disabled' not in chats_response.text
     assert 'placeholder="Напишите вопрос..."' in chat_response.text
     assert '<span aria-hidden="true">▶</span>' in chat_response.text
     assert 'class="chat-aside"' not in chat_response.text
