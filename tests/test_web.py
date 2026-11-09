@@ -883,6 +883,8 @@ def test_chats_list_renders_existing(web_session_factory):
 
     assert response.status_code == 200
     assert "document.pdf" in response.text
+    assert '<section class="page-heading chats-page-heading"' in response.text
+    assert '<h1 id="page-title">Хранимые чаты</h1>' in response.text
 
 
 def test_shared_layout_displays_recent_chats_in_right_sidebar(web_session_factory):
