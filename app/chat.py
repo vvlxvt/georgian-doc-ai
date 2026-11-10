@@ -59,7 +59,7 @@ class ChatSendResult:
     user_message: Message
     assistant_message: Message | None
     sources: tuple[SourceReference, ...]
-    error: str | None
+    error: Exception | None
 
 
 class ChatService:
@@ -138,7 +138,7 @@ class ChatService:
                 user_message=user_message,
                 assistant_message=None,
                 sources=(),
-                error=str(exc),
+                error=exc,
             )
 
         sources_payload = (

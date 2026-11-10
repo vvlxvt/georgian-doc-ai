@@ -71,9 +71,9 @@ app/
   preflight.py          validate_runtime(): схема БД, Qdrant, LLM-провайдер, языки Tesseract
   web.py                FastAPI factory, статика, проверка origem (защита форм)
   web_dependencies.py   get_session (request-scoped SQLAlchemy сессия)
-  web_routes.py         маршруты: /, /documents, /upload, /ask, /chats, /chats/{id}, /health
+  web_routes.py         маршруты: /, /documents, /upload, /chats, /chats/{id}, /health
   chat.py               ChatService (чаты scoped to selected documents; persisting ordered messages + sources_json)
-  templates/            Jinja2 (home, documents, upload, ask, chats, chat, base)
+  templates/            Jinja2 (home, documents, upload, chats, chat, base)
   static/css, static/js — стили и маленькие скрипты
 alembic/                env.py + versions/ (four revisions, включая переименование схемы чатов)
 tests/                  один тест-модуль на app-модуль + test_main.py, conftest.py
@@ -161,7 +161,6 @@ LLM_IMPLEMENTATION_QUEUE.md предложенные улучшения (не о
 - `GET/POST /upload` — загрузка PDF (до 50 MiB, проверка `%PDF-`), индексация через `create_document_pipeline()`, копия оригинала в `data/documents/<hash>.pdf` с верификацией SHA-256
 - `GET /documents/{id}/original` — отдача оригинала только при совпадении хеша
 - `POST /documents/{id}/delete` — удаление векторов из Qdrant, строк из БД и файла оригинала
-- `GET/POST /ask` — вопрос с выбором документов, ответ через `RAGPipeline.answer`
 - `GET/POST /chats`, `GET /chats/{id}` — список чатов, создание и просмотр чата с сообщениями
 - `POST /chats/{id}/messages` — отправка сообщения через `ChatService` (сохраняет пользовательское + ассистентское сообщения, `sources_json`)
 - `POST /chats/delete-selected` — удаление выбранных чатов и их сообщений

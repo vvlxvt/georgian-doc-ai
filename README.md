@@ -72,12 +72,9 @@ The UI provides:
   corresponding vectors are present in Qdrant. The filename links to the
   original PDF when available in `data/documents/` or as a matching file in
   `data/input/`; each document can also be deleted with its pages, chunks, and
-  Qdrant vectors.
+  Qdrant vectors. Select documents here to start a chat scoped to them.
 - `/upload` — PDF upload and indexing through the existing document pipeline.
   Files must have a `.pdf` extension and PDF signature; maximum size is 50 MiB.
-- `/ask` — submit a question to the existing RAG pipeline and display its
-  Russian answer. Select one or more documents to limit the search; with no
-  documents selected, the search includes all documents.
 - `/health` — web-process liveness only; it does not replace `main.py preflight`.
 
 Uploaded files are streamed to a temporary file, indexed, and then stored as
@@ -88,19 +85,18 @@ PDF in `data/input/`; the file's SHA-256 is verified before it is served.
 Documents indexed from elsewhere do not retain their source path and need to
 be uploaded through the UI to make the original available. Deleting a document
 removes its SQLite records, matching Qdrant vectors, and hash-named uploaded
-original; matching files in `data/input/` are kept. The answer page displays
-the answer string from RAG and does not independently reconstruct source
-references.
+original; matching files in `data/input/` are kept. Chat pages display answers
+with their validated source references.
 Answers use ordinary Russian text with `[стр. N]` page citations. The
 application checks that cited page numbers occur in the retrieved results and
 that each detected sentence has a citation. This membership check does not
 prove that a source factually supports the associated claim.
 
-LLM question processing is synchronous: the `/ask` response waits for retrieval,
-provider completion, and answer validation. The application does not persist
-questions, prompts, retrieved text, answers, or raw provider responses. The
-selected provider still receives request content and applies its own retention
-and data-handling terms. The prompt is versioned in `app/answer.py`
+Chat message processing is synchronous: each message request waits for
+retrieval, provider completion, and answer validation. User messages and
+answers are persisted in SQLite; prompts, retrieved text, and raw provider
+responses are not. The selected provider still receives request content and
+applies its own retention and data-handling terms. The prompt is versioned in `app/answer.py`
 (`answer-v3`). The model is asked for ordinary text rather than a fixed JSON
 schema because OpenRouter's automatic model selection may return varying
 formats. Empty output, missing page citations, and citations to pages absent
@@ -148,16 +144,17 @@ On startup, the application also ensures keyword payload indexes for `document_i
 
 ## Chat
 
-The web UI adds persistent multi-document chats on top of the one-shot
-`/ask` workflow. Chats and messages are stored in SQLite, and each
-chat can be associated with one or more documents. Follow-up questions
-retrieve context only from the selected documents' indexed chunks.
+The web UI provides persistent multi-document chats. Chats and messages are
+stored in SQLite, and each chat can be associated with one or more documents.
+Follow-up questions retrieve context only from the selected documents' indexed
+chunks. Questions are limited to chats with selected documents; there is no
+one-shot search across the entire library.
 
 ### Chat workflows
 
-1. **Create a chat:** On the Chats page, select one or more
-   documents and create a chat. Its search scope is limited to those
-   documents.
+1. **Create a chat:** On the Documents page, select one or more documents and
+   start a chat, or create one from the Chats page. Its search scope is limited
+   to those documents.
 2. **Send a message:** Open the chat, type your question in Russian,
    and submit. The answer includes `[стр. N]` citations backed by the
    retrieved chunks.
@@ -246,7 +243,7 @@ Lint and format:
 - `main.py preflight` validates the schema, Qdrant, the selected LLM provider configuration, and Tesseract language data. For Ollama it checks the configured model; for OpenRouter it checks that the API key is configured without sending a live or potentially billable request.
 - OpenRouter requests may incur provider charges. The application never switches providers or models automatically; preflight checks only that a key is configured, not whether it is valid or funded.
 - LLM calls retry only safe connection-establishment failures and HTTP 429 responses, within the attempt and total-time limits. `Retry-After` is honored when valid. Read/write timeouts, connection loss after transmission, other HTTP statuses, and answer-validation failures are not retried; an unknown outcome may mean the provider processed the request.
-- `/ask` maps typed provider errors to safe Russian guidance and logs provider, model, error category, attempts, elapsed time, and the provider request ID when available. It never logs the API key, question, retrieved text, prompt, or model response.
+- Chat message failures map typed provider errors to safe Russian guidance and log provider, model, error category, attempts, elapsed time, and the provider request ID when available. The application never logs the API key, question, retrieved text, prompt, or model response.
 
 The real OpenRouter smoke test is intentionally opt-in and may incur charges.
 Run it only when an OpenRouter key is configured and you explicitly want a

@@ -442,111 +442,6 @@ def upload_document(
     )
 
 
-@router.get("/ask", name="ask_form")
-def ask_form(
-    request: Request,
-    session: Session = Depends(get_session),
-):
-    from app.dependencies import get_llm_service
-
-    documents = _get_question_documents(session)
-    return templates.TemplateResponse(
-        request=request,
-        name="ask.html",
-        context={
-            "answer": None,
-            "documents": documents,
-            "llm_model_name": get_llm_service().model,
-            "max_question_chars": MAX_QUESTION_CHARS,
-            "question": "",
-            "selected_document_ids": [],
-        },
-    )
-
-
-def _get_question_documents(session: Session) -> list[Document]:
-    return session.scalars(
-        select(Document).order_by(Document.created_at.desc(), Document.filename)
-    ).all()
-
-
-@router.post("/ask", name="ask_question")
-def ask_question(
-    request: Request,
-    question: str = Form(...),
-    document_ids: list[str] = Form(default=[]),
-    session: Session = Depends(get_session),
-):
-    from app.dependencies import get_llm_service
-
-    question = question.strip()
-    answer = None
-    error = None
-    status_code = 200
-    documents = _get_question_documents(session)
-    available_document_ids = {document.id for document in documents}
-    selected_document_ids = list(dict.fromkeys(document_ids))
-    llm_model_name = get_llm_service().model
-
-    if not question:
-        error = "Введите вопрос."
-        status_code = 422
-    elif len(question) > MAX_QUESTION_CHARS:
-        error = f"Вопрос не должен превышать {MAX_QUESTION_CHARS} символов."
-        status_code = 422
-    elif not set(selected_document_ids).issubset(available_document_ids):
-        error = "Выберите документы из списка и повторите попытку."
-        status_code = 422
-    else:
-        try:
-            from app.dependencies import create_rag_pipeline
-
-            rag_pipeline = create_rag_pipeline()
-            if selected_document_ids:
-                answer = rag_pipeline.answer(
-                    question=question,
-                    document_ids=selected_document_ids,
-                )
-            else:
-                answer = rag_pipeline.answer(question=question)
-        except LLMError as exc:
-            logger.warning(
-                "LLM question processing failed",
-                extra={
-                    "llm_provider": exc.provider,
-                    "llm_model": exc.model,
-                    "llm_category": exc.category.value,
-                    "llm_attempts": exc.attempts,
-                    "llm_duration_seconds": exc.duration_seconds,
-                    "llm_request_id": exc.provider_request_id,
-                },
-            )
-            error = _llm_failure_message(exc)
-            status_code = 503
-        except Exception:
-            logger.exception("RAG question processing failed")
-            error = "Не удалось получить ответ. Проверьте доступность служб."
-            status_code = 503
-
-    if answer is not None:
-        llm_model_name = getattr(answer, "model_name", None) or llm_model_name
-
-    return templates.TemplateResponse(
-        request=request,
-        name="ask.html",
-        context={
-            "answer": answer,
-            "documents": documents,
-            "error": error,
-            "llm_model_name": llm_model_name,
-            "max_question_chars": MAX_QUESTION_CHARS,
-            "question": question,
-            "selected_document_ids": selected_document_ids,
-        },
-        status_code=status_code,
-    )
-
-
 @router.get("/chats", name="chats")
 def chats_list(
     request: Request,
@@ -651,7 +546,26 @@ def send_message(
                 content=content_stripped,
             )
             if rag_result.error is not None:
-                error = rag_result.error
+                if isinstance(rag_result.error, LLMError):
+                    llm_error = rag_result.error
+                    logger.warning(
+                        "Chat message LLM processing failed",
+                        extra={
+                            "llm_provider": llm_error.provider,
+                            "llm_model": llm_error.model,
+                            "llm_category": llm_error.category.value,
+                            "llm_attempts": llm_error.attempts,
+                            "llm_duration_seconds": llm_error.duration_seconds,
+                            "llm_request_id": llm_error.provider_request_id,
+                        },
+                    )
+                    error = _llm_failure_message(llm_error)
+                else:
+                    logger.error(
+                        "Chat message processing failed",
+                        extra={"error_type": type(rag_result.error).__name__},
+                    )
+                    error = "Не удалось получить ответ. Проверьте доступность служб."
             session.commit()
         except Exception:
             session.rollback()

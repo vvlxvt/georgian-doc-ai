@@ -13,8 +13,8 @@
         страницам оригинальных документов.
       </p>
       <div class="hero-actions">
-        <a class="button button-primary" href="{{ url_for('ask_form') }}">
-          <span aria-hidden="true">✳</span> Задать вопрос
+        <a class="button button-primary" href="{{ url_for('documents') }}">
+          <span aria-hidden="true">✳</span> Выбрать документы
         </a>
         <a class="button button-secondary" href="{{ url_for('upload_form') }}">
           Добавить документ <span aria-hidden="true">↗</span>
@@ -59,12 +59,12 @@
         </span>
         <span class="workflow-arrow" aria-hidden="true">↗</span>
       </a>
-      <a class="workflow-card" href="{{ url_for('ask_form') }}">
-        <span class="workflow-icon workflow-icon-ask" aria-hidden="true">✳</span>
+      <a class="workflow-card" href="{{ url_for('documents') }}">
+        <span class="workflow-icon workflow-icon-chat" aria-hidden="true">✳</span>
         <span class="workflow-copy">
           <span class="workflow-number">ШАГ 02</span>
-          <span class="workflow-title">Задайте вопрос</span>
-          <span class="workflow-description">Ищите по всей библиотеке или выберите нужные источники.</span>
+          <span class="workflow-title">Начните чат</span>
+          <span class="workflow-description">Выберите документы, чтобы задать вопрос и продолжить беседу.</span>
         </span>
         <span class="workflow-arrow" aria-hidden="true">↗</span>
       </a>

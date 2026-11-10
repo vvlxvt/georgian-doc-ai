@@ -41,9 +41,7 @@ def create_app(
             or request.url.path == "/chats/delete-selected"
         )
         if request.method == "POST" and (
-            request.url.path in {"/upload", "/ask"}
-            or is_document_delete
-            or is_chat_mutating
+            request.url.path == "/upload" or is_document_delete or is_chat_mutating
         ):
             origin = request.headers.get("origin")
             if origin and not _is_same_origin(origin, str(request.base_url)):

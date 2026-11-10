@@ -46,7 +46,6 @@
       <table class="striped-table">
         <thead>
           <tr>
-            <th>Документы</th>
             <th>Чат</th>
             <th>Создана</th>
             <th>Обновлена</th>
@@ -55,13 +54,6 @@
         <tbody>
           {% for chat in chats %}
           <tr>
-            <td>
-              {% for document in chat.documents %}
-                {{ document.filename }}{% if not loop.last %}, {% endif %}
-              {% else %}
-                Нет доступных документов
-              {% endfor %}
-            </td>
             <td>
               <a href="{{ url_for('chat_view', chat_id=chat.id) }}">{{ chat.title or "Без названия" }}</a>
             </td>

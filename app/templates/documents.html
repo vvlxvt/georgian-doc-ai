@@ -7,7 +7,6 @@
   <a class="nav-link" href="{{ url_for('home') }}">Главная</a>
   <a class="nav-link is-active" href="{{ url_for('documents') }}" aria-current="page">Документы</a>
   <a class="nav-link" href="{{ url_for('upload_form') }}">Загрузить PDF</a>
-  <a class="nav-link" href="{{ url_for('ask_form') }}">Задать вопрос</a>
 {% endblock %}
 
 {% block content %}
@@ -18,6 +17,7 @@
       <p class="page-description">
         Здесь показаны документы, зарегистрированные в локальной базе приложения.
         Список сам по себе не проверяет наличие векторов в Qdrant.
+        Выберите документы, чтобы начать по ним чат.
       </p>
     </div>
     <a class="button button-primary" href="{{ url_for('upload_form') }}"><span aria-hidden="true">＋</span> Добавить PDF</a>
@@ -43,7 +43,15 @@
     <div class="document-list">
       {% for entry in documents %}
         <article class="document-card">
-          <div class="document-file-mark" aria-hidden="true">PDF</div>
+          <label class="document-chat-select">
+            <input
+              type="checkbox"
+              name="document_ids"
+              value="{{ entry.document.id }}"
+              form="create-chat-form"
+            >
+            <span>Выбрать для чата</span>
+          </label>
           <div class="document-card-content">
             <div class="document-card-heading">
               <h2>
@@ -82,6 +90,18 @@
         </article>
       {% endfor %}
     </div>
+    <form
+      id="create-chat-form"
+      class="document-chat-form"
+      action="{{ url_for('create_chat') }}"
+      method="post"
+      data-document-chat-form
+      data-pending-message="Создаём чат..."
+      data-pending-label="Создаём чат..."
+    >
+      <button class="button button-primary" type="submit">Начать чат</button>
+      <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
+    </form>
 
     {% if page_count > 1 %}
       <nav class="pagination" aria-label="Страницы списка документов">

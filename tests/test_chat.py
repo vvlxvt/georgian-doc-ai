@@ -152,7 +152,8 @@ def test_send_message_llm_failure_keeps_user_message(session):
     result = service.send_message("chat-1", "Вопрос после сбоя")
 
     assert result.error is not None
-    assert "LLM provider unavailable" in result.error
+    assert isinstance(result.error, RuntimeError)
+    assert "LLM provider unavailable" in str(result.error)
     assert result.user_message is not None
     assert result.user_message.content == "Вопрос после сбоя"
     assert result.user_message.role == MessageRole.USER

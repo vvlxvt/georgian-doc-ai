@@ -51,6 +51,9 @@ def test_home_page_renders_shared_layout_and_russian_content():
     assert '<html lang="ru">' in response.text
     assert "<title>Главная — Georgian Document RAG</title>" in response.text
     assert "Находите ответы в документах" in response.text
+    assert "Выбрать документы" in response.text
+    assert "Задайте вопрос" not in response.text
+    assert "/ask" not in response.text
     assert '<div class="app-shell">' in response.text
     assert 'class="nav-link is-active" href="http://testserver/"' in response.text
     assert 'class="dashboard-hero"' in response.text
@@ -86,12 +89,6 @@ def test_static_pending_script_is_mounted():
             "Файл загружается и индексируется",
             "Идёт индексация...",
             "upload-layout",
-        ),
-        (
-            "/ask",
-            "Ищем информацию в документах",
-            "Ищем ответ...",
-            "question-layout",
         ),
     ],
 )
@@ -137,6 +134,61 @@ def test_documents_page_renders_delete_form(web_session_factory):
     assert f"/documents/{document_id}/delete" in response.text
     assert "Удалить документ" in response.text
     assert "data-confirm-message=" in response.text
+
+
+def test_documents_page_renders_chat_selection_and_create_form(web_session_factory):
+    document_id = add_web_document(web_session_factory)
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.get("/documents")
+
+    assert response.status_code == 200
+    assert "Выберите документы, чтобы начать по ним чат." in response.text
+    assert 'name="document_ids"' in response.text
+    assert f'value="{document_id}"' in response.text
+    assert 'form="create-chat-form"' in response.text
+    assert response.text.index('class="document-chat-select"') < response.text.index(
+        'class="document-card-content"'
+    )
+    assert 'class="document-file-mark"' not in response.text
+    assert 'id="create-chat-form"' in response.text
+    assert 'action="http://testserver/chats"' in response.text
+    assert "Начать чат" in response.text
+
+
+def test_documents_page_chat_form_creates_chat_from_selected_documents(
+    web_session_factory,
+):
+    first_document_id = add_web_document(
+        web_session_factory,
+        filename="first.pdf",
+        file_hash="1" * 64,
+    )
+    second_document_id = add_web_document(
+        web_session_factory,
+        filename="second.pdf",
+        file_hash="2" * 64,
+    )
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.post(
+            "/chats",
+            data={"document_ids": [first_document_id, second_document_id]},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/chats/")
+    with web_session_factory() as session:
+        from app.models import Chat
+
+        chat = session.query(Chat).one()
+        assert {document.id for document in chat.documents} == {
+            first_document_id,
+            second_document_id,
+        }
 
 
 def test_delete_document_removes_database_records_vectors_and_owned_original(
@@ -532,275 +584,20 @@ def test_upload_enforces_size_limit_and_reports_pipeline_errors(
     assert not Path(failed_paths[0]).exists()
 
 
-def test_question_form_uses_rag_pipeline_and_escapes_answer(
-    web_session_factory,
-    monkeypatch,
-):
-    from app import dependencies
-    from app.answer import AnswerResult
-
-    document_ids = [
-        add_web_document(
-            web_session_factory,
-            filename="document-one.pdf",
-            file_hash="a" * 64,
-        ),
-        add_web_document(
-            web_session_factory,
-            filename="document-two.pdf",
-            file_hash="b" * 64,
-        ),
-    ]
-    received_questions = []
-
-    class FakeRAGPipeline:
-        def answer(self, question, document_ids=None):
-            received_questions.append(question)
-            assert document_ids == document_ids_expected
-            return AnswerResult(
-                "<script>alert(1)</script> Ответ. [стр. 2]",
-                llm_model_name="gpt-4o-mini",
-            )
-
-    document_ids_expected = document_ids
-    monkeypatch.setattr(
-        dependencies,
-        "create_rag_pipeline",
-        lambda: FakeRAGPipeline(),
-    )
-
-    application = create_app(session_factory=web_session_factory)
-    with TestClient(application) as client:
-        response = client.post(
+@pytest.mark.parametrize("method", ["get", "post"])
+def test_removed_ask_routes_return_not_found(method):
+    with TestClient(app) as client:
+        response = getattr(client, method)(
             "/ask",
-            data={
-                "question": "  Что указано?  ",
-                "document_ids": document_ids,
-            },
+            **({"data": {"question": "Каков срок?"}} if method == "post" else {}),
         )
 
-    assert response.status_code == 200
-    assert received_questions == ["Что указано?"]
-    for document_id in document_ids:
-        assert f'value="{document_id}"' in response.text
-    assert response.text.count("checked") == len(document_ids)
-    assert "Используемая LLM: gpt-4o-mini" in response.text
-    assert "&lt;script&gt;alert(1)&lt;/script&gt; Ответ. [стр. 2]" in response.text
-    assert "<script>alert(1)</script>" not in response.text
-
-
-def test_question_form_initial_state_lists_available_documents(web_session_factory):
-    document_id = add_web_document(web_session_factory)
-    application = create_app(session_factory=web_session_factory)
-
-    with TestClient(application) as client:
-        response = client.get("/ask")
-
-    assert response.status_code == 200
-    assert "Результат" not in response.text
-    assert "Источники для поиска" in response.text
-    assert "document.pdf" in response.text
-    assert f'value="{document_id}"' in response.text
-
-
-def test_question_form_displays_insufficient_information_answer(
-    web_session_factory,
-    monkeypatch,
-):
-    from app import dependencies
-
-    class FakeRAGPipeline:
-        def answer(self, question):
-            return "В предоставленных документах недостаточно информации для ответа."
-
-    monkeypatch.setattr(
-        dependencies,
-        "create_rag_pipeline",
-        lambda: FakeRAGPipeline(),
-    )
-
-    application = create_app(session_factory=web_session_factory)
-    with TestClient(application) as client:
-        response = client.post("/ask", data={"question": "Несвязанный вопрос"})
-
-    assert response.status_code == 200
-    assert "В предоставленных документах недостаточно информации" in response.text
-
-
-@pytest.mark.parametrize(
-    ("question", "error"),
-    [
-        ("   ", "Введите вопрос"),
-        ("x" * 2001, "не должен превышать 2000 символов"),
-    ],
-)
-def test_question_form_rejects_invalid_question(
-    question,
-    error,
-    web_session_factory,
-    monkeypatch,
-):
-    from app import dependencies
-
-    def unexpected_pipeline():
-        pytest.fail("Invalid question must not reach RAG")
-
-    monkeypatch.setattr(dependencies, "create_rag_pipeline", unexpected_pipeline)
-
-    application = create_app(session_factory=web_session_factory)
-    with TestClient(application) as client:
-        response = client.post("/ask", data={"question": question})
-
-    assert response.status_code == 422
-    assert error in response.text
-
-
-def test_question_form_reports_rag_failure_without_internal_details(
-    web_session_factory,
-    monkeypatch,
-):
-    from app import dependencies
-
-    class BrokenRAGPipeline:
-        def answer(self, question):
-            raise RuntimeError("private internal details")
-
-    monkeypatch.setattr(
-        dependencies,
-        "create_rag_pipeline",
-        lambda: BrokenRAGPipeline(),
-    )
-
-    application = create_app(session_factory=web_session_factory)
-    with TestClient(application) as client:
-        response = client.post("/ask", data={"question": "Каков срок?"})
-
-    assert response.status_code == 503
-    assert "Не удалось получить ответ" in response.text
-    assert "private internal details" not in response.text
-
-
-def test_question_form_maps_llm_failure_and_logs_only_safe_metadata(
-    web_session_factory,
-    monkeypatch,
-):
-    from app import dependencies, web_routes
-    from app.llm import LLMError, LLMErrorCategory
-
-    log_records = []
-
-    class BrokenRAGPipeline:
-        def answer(self, question):
-            raise LLMError(
-                LLMErrorCategory.RATE_LIMIT,
-                "raw provider body and secret token",
-                provider="openrouter",
-                model="test-model",
-                provider_request_id="request-123",
-                attempts=2,
-                duration_seconds=1.25,
-            )
-
-    monkeypatch.setattr(
-        dependencies,
-        "create_rag_pipeline",
-        lambda: BrokenRAGPipeline(),
-    )
-    monkeypatch.setattr(
-        web_routes.logger,
-        "warning",
-        lambda message, *, extra: log_records.append((message, extra)),
-    )
-    application = create_app(session_factory=web_session_factory)
-
-    with TestClient(application) as client:
-        response = client.post(
-            "/ask",
-            data={"question": "private question text"},
-        )
-
-    assert response.status_code == 503
-    assert "ограничил частоту запросов" in response.text
-    assert "raw provider body" not in response.text
-    assert log_records == [
-        (
-            "LLM question processing failed",
-            {
-                "llm_provider": "openrouter",
-                "llm_model": "test-model",
-                "llm_category": "rate_limit",
-                "llm_attempts": 2,
-                "llm_duration_seconds": 1.25,
-                "llm_request_id": "request-123",
-            },
-        )
-    ]
-    assert "private question text" not in repr(log_records)
-    assert "raw provider body" not in repr(log_records)
-    assert "secret token" not in repr(log_records)
-
-
-def test_question_form_warns_before_retrying_unknown_outcome(
-    web_session_factory,
-    monkeypatch,
-):
-    from app import dependencies
-    from app.llm import LLMError, LLMErrorCategory
-
-    class BrokenRAGPipeline:
-        def answer(self, question):
-            raise LLMError(
-                LLMErrorCategory.OUTCOME_UNKNOWN,
-                "private transport detail",
-                provider="openrouter",
-                model="test-model",
-            )
-
-    monkeypatch.setattr(
-        dependencies,
-        "create_rag_pipeline",
-        lambda: BrokenRAGPipeline(),
-    )
-    application = create_app(session_factory=web_session_factory)
-
-    with TestClient(application) as client:
-        response = client.post("/ask", data={"question": "Каков срок?"})
-
-    assert response.status_code == 503
-    assert "провайдер мог его обработать" in response.text
-    assert "Проверьте лимит расходов" in response.text
-    assert "private transport detail" not in response.text
-
-
-def test_question_form_rejects_document_ids_not_in_database(
-    web_session_factory,
-    monkeypatch,
-):
-    from app import dependencies
-
-    def unexpected_pipeline():
-        pytest.fail("Unknown document IDs must not reach RAG")
-
-    monkeypatch.setattr(dependencies, "create_rag_pipeline", unexpected_pipeline)
-    application = create_app(session_factory=web_session_factory)
-
-    with TestClient(application) as client:
-        response = client.post(
-            "/ask",
-            data={
-                "question": "Каков срок?",
-                "document_ids": ["not-a-document"],
-            },
-        )
-
-    assert response.status_code == 422
-    assert "Выберите документы из списка" in response.text
+    assert response.status_code == 404
 
 
 @pytest.mark.parametrize(
     ("path", "data"),
     [
-        ("/ask", {"question": "Каков срок?"}),
         ("/upload", {}),
         ("/documents/missing/delete", {}),
     ],
@@ -885,6 +682,7 @@ def test_chats_list_renders_existing(web_session_factory):
     assert "document.pdf" in response.text
     assert '<section class="page-heading chats-page-heading"' in response.text
     assert '<h1 id="page-title">Хранимые чаты</h1>' in response.text
+    assert "<th>Документы</th>" not in response.text
     assert "<th>Действие</th>" not in response.text
     assert "Удалить чат и все его сообщения?" not in response.text
 
@@ -1118,6 +916,152 @@ def test_send_message_persists_user_and_assistant(web_session_factory, monkeypat
     ]
     positions = [history_response.text.index(message) for message in expected_history]
     assert positions == sorted(positions)
+
+
+def test_send_message_maps_llm_failures_to_safe_guidance(
+    web_session_factory,
+    monkeypatch,
+):
+    from app import dependencies, web_routes
+    from app.llm import LLMError, LLMErrorCategory
+    from app.models import Message, MessageRole
+
+    chat_id = add_web_chat(web_session_factory)
+    log_records = []
+
+    class BrokenRAGPipeline:
+        def answer_with_sources(self, question, **kwargs):
+            raise LLMError(
+                LLMErrorCategory.RATE_LIMIT,
+                "raw provider body and secret token",
+                provider="openrouter",
+                model="test-model",
+                provider_request_id="request-123",
+                attempts=2,
+                duration_seconds=1.25,
+            )
+
+    monkeypatch.setattr(
+        dependencies,
+        "create_rag_pipeline",
+        lambda: BrokenRAGPipeline(),
+    )
+    monkeypatch.setattr(
+        web_routes.logger,
+        "warning",
+        lambda message, *, extra: log_records.append((message, extra)),
+    )
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.post(
+            f"/chats/{chat_id}/messages",
+            data={"content": "Каков срок?"},
+        )
+
+    assert response.status_code == 200
+    assert "ограничил частоту запросов" in response.text
+    assert "raw provider body" not in response.text
+    assert log_records == [
+        (
+            "Chat message LLM processing failed",
+            {
+                "llm_provider": "openrouter",
+                "llm_model": "test-model",
+                "llm_category": "rate_limit",
+                "llm_attempts": 2,
+                "llm_duration_seconds": 1.25,
+                "llm_request_id": "request-123",
+            },
+        )
+    ]
+    assert "secret token" not in repr(log_records)
+    with web_session_factory() as session:
+        messages = (
+            session.query(Message)
+            .filter_by(chat_id=chat_id, role=MessageRole.USER)
+            .all()
+        )
+        assert any(message.content == "Каков срок?" for message in messages)
+
+
+def test_send_message_warns_on_unknown_llm_outcome(
+    web_session_factory,
+    monkeypatch,
+):
+    from app import dependencies
+    from app.llm import LLMError, LLMErrorCategory
+
+    chat_id = add_web_chat(web_session_factory)
+
+    class BrokenRAGPipeline:
+        def answer_with_sources(self, question, **kwargs):
+            raise LLMError(
+                LLMErrorCategory.OUTCOME_UNKNOWN,
+                "private transport detail",
+                provider="openrouter",
+                model="test-model",
+            )
+
+    monkeypatch.setattr(
+        dependencies,
+        "create_rag_pipeline",
+        lambda: BrokenRAGPipeline(),
+    )
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.post(
+            f"/chats/{chat_id}/messages",
+            data={"content": "Каков срок?"},
+        )
+
+    assert response.status_code == 200
+    assert "провайдер мог его обработать" in response.text
+    assert "Проверьте лимит расходов" in response.text
+    assert "private transport detail" not in response.text
+
+
+def test_send_message_hides_unexpected_failure_details(
+    web_session_factory,
+    monkeypatch,
+):
+    from app import dependencies, web_routes
+
+    chat_id = add_web_chat(web_session_factory)
+    log_records = []
+
+    class BrokenRAGPipeline:
+        def answer_with_sources(self, question, **kwargs):
+            raise RuntimeError("private internal details")
+
+    monkeypatch.setattr(
+        dependencies,
+        "create_rag_pipeline",
+        lambda: BrokenRAGPipeline(),
+    )
+    monkeypatch.setattr(
+        web_routes.logger,
+        "error",
+        lambda message, *, extra: log_records.append((message, extra)),
+    )
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.post(
+            f"/chats/{chat_id}/messages",
+            data={"content": "Вопрос после сбоя"},
+        )
+
+    assert response.status_code == 200
+    assert "Не удалось получить ответ" in response.text
+    assert "private internal details" not in response.text
+    assert log_records == [
+        (
+            "Chat message processing failed",
+            {"error_type": "RuntimeError"},
+        )
+    ]
 
 
 def test_send_message_rejects_messages_above_maximum_length(web_session_factory):

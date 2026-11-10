@@ -1,5 +1,10 @@
 # Persistent Document Chat Implementation Queue
 
+> Historical plan note: this plan originally kept `/ask` as a separate
+> one-shot workflow. That page and its routes have since been removed; current
+> questions must use chats scoped to selected documents. References below to
+> preserving `/ask` describe the original plan and are superseded.
+
 ## Status
 
 - Total: 8

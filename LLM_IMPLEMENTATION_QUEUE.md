@@ -1,5 +1,11 @@
 # LLM Implementation Queue
 
+> Product flow update: the one-shot `/ask` page and routes have
+> been removed. The current UI supports questions through chats scoped to
+> selected documents; there is no one-shot search across the full library.
+> Queue items below were written for the previous flow and must be re-scoped
+> before future implementation.
+
 ## Project inspection
 
 ### Existing architecture
@@ -20,10 +26,10 @@
   `document_id`, `page_id`, `page_number`, `chunk_index`, and text. The context
   includes stable application-issued source identifiers plus page numbers and
   text; the answer contract uses page-number citations, not source-ID JSON.
-- The local FastAPI/Jinja UI has a synchronous `/ask` form, selected-document
-  filtering, pending UI feedback, category-specific safe error guidance, and
-  structured LLM failure logs that omit prompts, source text, credentials, and
-  provider response bodies. It has no JSON API, question history, job-status
+- The local FastAPI/Jinja UI supports synchronous, persistent chats scoped to
+  selected documents, pending UI feedback, category-specific safe error
+  guidance, and structured LLM failure logs that omit prompts, source text,
+  credentials, and provider response bodies. It has no JSON API, job-status
   endpoint, authentication, or background task queue.
 - SQLite currently stores documents, pages, and chunks only. Schema changes
   use Alembic; the sole existing revision is defensive/idempotent for legacy

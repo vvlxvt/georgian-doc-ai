@@ -28,12 +28,10 @@
           {% set home_url = url_for('home') %}
           {% set documents_url = url_for('documents') %}
           {% set upload_url = url_for('upload_form') %}
-          {% set ask_url = url_for('ask_form') %}
           {% set chats_url = url_for('chats') %}
           <a class="nav-link{% if current_path == home_url.path %} is-active{% endif %}" href="{{ home_url }}" {% if current_path == home_url.path %}aria-current="page"{% endif %}>Главная</a>
           <a class="nav-link{% if current_path == documents_url.path or current_path.startswith(documents_url.path + '/') %} is-active{% endif %}" href="{{ documents_url }}" {% if current_path == documents_url.path or current_path.startswith(documents_url.path + '/') %}aria-current="page"{% endif %}>Документы</a>
           <a class="nav-link{% if current_path == upload_url.path %} is-active{% endif %}" href="{{ upload_url }}" {% if current_path == upload_url.path %}aria-current="page"{% endif %}>Загрузить PDF</a>
-          <a class="nav-link{% if current_path == ask_url.path %} is-active{% endif %}" href="{{ ask_url }}" {% if current_path == ask_url.path %}aria-current="page"{% endif %}>Задать вопрос</a>
           <a class="nav-link{% if current_path == chats_url.path or current_path.startswith(chats_url.path + '/') %} is-active{% endif %}" href="{{ chats_url }}" {% if current_path == chats_url.path or current_path.startswith(chats_url.path + '/') %}aria-current="page"{% endif %}>Чаты</a>
         </nav>
         <div class="sidebar-note">
@@ -46,8 +44,8 @@
         <header class="workspace-header">
           <div class="workspace-header-inner">
             <p class="workspace-location"><span aria-hidden="true">⌂</span> Рабочее пространство <span aria-hidden="true">/</span> Документы</p>
-            <a class="header-action" href="{{ url_for('ask_form') }}">
-              <span aria-hidden="true">↗</span> Задать вопрос
+            <a class="header-action" href="{{ url_for('documents') }}">
+              <span aria-hidden="true">↗</span> Начать чат
             </a>
           </div>
         </header>

@@ -29,7 +29,7 @@ indexing failure.
 `main.py` provides `preflight` and `index <pdf>`. The web entry point is
 `app.web:app`, normally served by Uvicorn. `GET /health` is a web-process
 liveness check only. There are no background workers, scheduled jobs, queues,
-or Redis integration in the repository. Upload/indexing and `/ask` run
+or Redis integration in the repository. Upload/indexing and chat messages run
 synchronously within web requests.
 
 ```mermaid
@@ -376,8 +376,8 @@ not validate the key, account balance, or make a billable test request.
   compressed or complex PDFs can require much more processing memory than
   their upload size.
 - **Rate limits:** the application does not configure request rate limiting.
-  Add it at a trusted edge, especially for uploads and `/ask`. `/ask` has a
-  2000-character question limit, but no per-user quota or authentication.
+  Add it at a trusted edge, especially for uploads and chat messages. Chat
+  messages have a 2000-character limit, but no per-user quota or authentication.
 - **Logging:** no production log rotation policy is supplied. Configure
   journald or an external log collector with rotation, access restrictions,
   and retention. Do not log keys, prompts, document text, or raw model
