@@ -157,7 +157,9 @@ one-shot search across the entire library.
    to those documents.
 2. **Send a message:** Open the chat, type your question in Russian,
    and submit. The answer includes `[стр. N]` citations backed by the
-   retrieved chunks.
+   retrieved chunks. The question and answer are saved together only after an
+   answer is produced; a failed LLM request does not add an unanswered question
+   to chat history.
 3. **View history:** Reopening a chat displays all persisted user and
    assistant messages with their source page references.
 4. **Delete a chat:** Deleting a chat removes it and all its

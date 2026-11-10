@@ -1052,7 +1052,7 @@ def test_send_message_maps_llm_failures_to_safe_guidance(
             .filter_by(chat_id=chat_id, role=MessageRole.USER)
             .all()
         )
-        assert any(message.content == "Каков срок?" for message in messages)
+        assert all(message.content != "Каков срок?" for message in messages)
 
 
 def test_send_message_warns_on_unknown_llm_outcome(

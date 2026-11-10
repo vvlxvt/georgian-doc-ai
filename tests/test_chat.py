@@ -95,6 +95,10 @@ def test_send_message_persists_user_and_assistant(session):
     assert len(result.sources) == 1
     assert result.sources[0].document_id == "doc-1"
     assert result.sources[0].page_number == 1
+    assert [message.role for message in repository.added_messages] == [
+        MessageRole.USER,
+        MessageRole.ASSISTANT,
+    ]
 
     assert result.assistant_message.sources_json is not None
     import json
@@ -139,14 +143,13 @@ def test_send_message_empty_content_raises(session):
         service.send_message("chat-1", "   ")
 
 
-def test_send_message_llm_failure_keeps_user_message(session):
-    repository = FakeChatRepository(session)
+def test_send_message_llm_failure_does_not_persist_user_message(session):
     chat = make_chat("chat-1", "doc-1")
-    repository._chats["chat-1"] = chat
     session.add(chat)
     session.commit()
 
     rag = FakeRAGPipeline(should_fail=True)
+    repository = ChatRepository(session)
     service = ChatService(session, repository, rag)
 
     result = service.send_message("chat-1", "Вопрос после сбоя")
@@ -154,11 +157,10 @@ def test_send_message_llm_failure_keeps_user_message(session):
     assert result.error is not None
     assert isinstance(result.error, RuntimeError)
     assert "LLM provider unavailable" in str(result.error)
-    assert result.user_message is not None
-    assert result.user_message.content == "Вопрос после сбоя"
-    assert result.user_message.role == MessageRole.USER
+    assert result.user_message is None
     assert result.assistant_message is None
     assert result.sources == ()
+    assert repository.get_recent_messages("chat-1", limit=10) == []
 
 
 def test_send_message_loads_bounded_history(session):
@@ -175,7 +177,7 @@ def test_send_message_loads_bounded_history(session):
 
     assert len(repository.recent_calls) == 1
     _, limit = repository.recent_calls[0]
-    assert limit == 3 * 2 + 1
+    assert limit == 3 * 2
 
 
 def test_send_message_uses_recent_history_for_retrieval_and_answer(session):

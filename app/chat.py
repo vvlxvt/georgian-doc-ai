@@ -15,14 +15,11 @@ CHAT_MAX_HISTORY_CHARS = 6000
 
 def _build_conversation_history(
     messages: list[Message],
-    current_message_id: str,
 ) -> list[ConversationMessage]:
     history = []
     remaining_chars = CHAT_MAX_HISTORY_CHARS
 
     for message in reversed(messages):
-        if message.id == current_message_id:
-            continue
         if remaining_chars <= 0:
             break
 
@@ -52,11 +49,10 @@ def _build_conversation_history(
 class ChatSendResult:
     """Result of sending a message in a chat.
 
-    `error` is set when the LLM provider failed; the user message is still
-    persisted and no assistant message is fabricated.
+    Messages are persisted only when an answer is available.
     """
 
-    user_message: Message
+    user_message: Message | None
     assistant_message: Message | None
     sources: tuple[SourceReference, ...]
     error: Exception | None
@@ -67,10 +63,10 @@ class ChatService:
 
     Responsibilities:
       * validate the chat and its selected documents,
-      * persist the user message,
       * load a bounded number of recent turns (history, kept out of evidence),
       * call the existing RAG pipeline scoped to the chat's documents,
-      * persist the assistant answer together with validated source references.
+      * persist the user message and assistant answer together with validated
+        source references.
 
     Source text and prompts are never persisted.
     """
@@ -98,23 +94,12 @@ class ChatService:
 
         document_ids = [document.id for document in chat.documents]
 
-        # Persist the user message first: it survives even if the LLM call fails.
-        user_message = self.chat_repository.add_message(
-            chat_id=chat_id,
-            role=MessageRole.USER,
-            content=content,
-        )
-        self.session.flush()
-
         # Keep history bounded and separate from document evidence.
         recent_messages = self.chat_repository.get_recent_messages(
             chat_id=chat_id,
-            limit=self.max_history_turns * 2 + 1,
+            limit=self.max_history_turns * 2,
         )
-        conversation_history = _build_conversation_history(
-            recent_messages,
-            current_message_id=user_message.id,
-        )
+        conversation_history = _build_conversation_history(recent_messages)
 
         history_query = "\n".join(
             f"{'Предыдущий вопрос' if message.role == 'user' else 'Предыдущий ответ'}: "
@@ -133,14 +118,18 @@ class ChatService:
                 conversation_history=conversation_history,
             )
         except Exception as exc:
-            # LLM failure: keep the user message, do not fabricate an assistant answer.
             return ChatSendResult(
-                user_message=user_message,
+                user_message=None,
                 assistant_message=None,
                 sources=(),
                 error=exc,
             )
 
+        user_message = self.chat_repository.add_message(
+            chat_id=chat_id,
+            role=MessageRole.USER,
+            content=content,
+        )
         sources_payload = (
             json.dumps(
                 [
