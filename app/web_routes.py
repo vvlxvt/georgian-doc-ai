@@ -449,16 +449,13 @@ def chats_list(
 ):
     repository = ChatRepository(session)
     chats = repository.list_all()
-    documents = session.scalars(
-        select(Document).order_by(Document.filename, Document.id)
-    ).all()
     for chat in chats:
         chat.created_at_display = _format_datetime(chat.created_at)
         chat.updated_at_display = _format_datetime(chat.updated_at)
     return templates.TemplateResponse(
         request=request,
         name="chats.html",
-        context={"chats": chats, "documents": documents},
+        context={"chats": chats},
     )
 
 

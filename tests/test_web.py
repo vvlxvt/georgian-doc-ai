@@ -670,6 +670,11 @@ def test_chats_list_renders_empty_state(web_session_factory):
 
     assert response.status_code == 200
     assert "Чатов ещё нет" in response.text
+    assert "Выберите документы на странице" in response.text
+    assert 'href="http://testserver/documents"' in response.text
+    assert "Документы для нового чата" not in response.text
+    assert "Создать чат" not in response.text
+    assert 'name="document_ids"' not in response.text
 
 
 def test_chats_list_renders_existing(web_session_factory):
@@ -679,9 +684,13 @@ def test_chats_list_renders_existing(web_session_factory):
         response = client.get("/chats")
 
     assert response.status_code == 200
-    assert "document.pdf" in response.text
+    assert "Test chat" in response.text
     assert '<section class="page-heading chats-page-heading"' in response.text
     assert '<h1 id="page-title">Хранимые чаты</h1>' in response.text
+    assert "Создайте чат по выбранным документам на странице" in response.text
+    assert "Документы для нового чата" not in response.text
+    assert "Создать чат" not in response.text
+    assert 'name="document_ids"' not in response.text
     assert "<th>Документы</th>" not in response.text
     assert "<th>Действие</th>" not in response.text
     assert "Удалить чат и все его сообщения?" not in response.text

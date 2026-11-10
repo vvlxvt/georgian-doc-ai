@@ -9,33 +9,11 @@
     <p class="eyebrow">Чаты</p>
     <h1 id="page-title">Хранимые чаты</h1>
     <p class="page-description">
-      Выберите один или несколько документов для чата. Ответы будут основаны
+      Создайте чат по выбранным документам на странице
+      <a href="{{ url_for('documents') }}">Документы</a>. Ответы будут основаны
       только на найденных фрагментах выбранных документов.
     </p>
   </section>
-
-  <form class="form-card" action="{{ url_for('create_chat') }}" method="post">
-    <fieldset class="document-filter">
-      <legend class="filter-heading">Документы для нового чата</legend>
-      {% if documents %}
-        <div class="document-options">
-          {% for document in documents %}
-            <label class="document-option">
-              <input type="checkbox" name="document_ids" value="{{ document.id }}">
-              <span class="document-option-name">{{ document.filename }}</span>
-              <span class="document-option-check" aria-hidden="true">✓</span>
-            </label>
-          {% endfor %}
-        </div>
-        <div class="form-actions">
-          <button class="button button-primary" type="submit">Создать чат</button>
-        </div>
-      {% else %}
-        <p class="field-help">Сначала загрузите документ для начала чата.</p>
-        <a class="text-link" href="{{ url_for('upload_form') }}">Загрузить PDF</a>
-      {% endif %}
-    </fieldset>
-  </form>
 
   {% if error %}
     <div class="alert alert-error" role="alert">{{ error }}</div>
@@ -66,7 +44,10 @@
     </div>
   {% else %}
     <div class="no-documents">
-      <p>Чатов ещё нет. Выберите документы выше, чтобы создать первый чат.</p>
+      <p>
+        Чатов ещё нет. Выберите документы на странице
+        <a href="{{ url_for('documents') }}">Документы</a>, чтобы создать первый чат.
+      </p>
     </div>
   {% endif %}
 {% endblock %}
