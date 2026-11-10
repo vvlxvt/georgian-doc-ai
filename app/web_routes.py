@@ -39,6 +39,12 @@ PAGE_STATUS_LABELS = {
     PageStatus.OCR: "Распознано OCR",
     PageStatus.OCR_FAILED: "Ошибка OCR",
 }
+PAGE_STATUS_CLASSES = {
+    PageStatus.PENDING: "pending",
+    PageStatus.PARSED: "parsed",
+    PageStatus.OCR: "ocr",
+    PageStatus.OCR_FAILED: "error",
+}
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 MAX_QUESTION_CHARS = 2000
@@ -181,6 +187,7 @@ def _render_documents(
         statuses = [
             {
                 "label": PAGE_STATUS_LABELS.get(status, "Неизвестный статус"),
+                "class_name": PAGE_STATUS_CLASSES.get(status, "unknown"),
                 "count": count,
             }
             for status, count in counts.items()
@@ -488,6 +495,8 @@ def chat_view(
     chat_id: str,
     session: Session = Depends(get_session),
 ):
+    from app.dependencies import get_llm_service
+
     repository = ChatRepository(session)
     chat = repository.get(chat_id)
     if chat is None:
@@ -501,6 +510,7 @@ def chat_view(
             "messages": messages,
             "error": None,
             "content": "",
+            "llm_model_name": get_llm_service().model,
             "max_question_chars": MAX_QUESTION_CHARS,
         },
     )
@@ -513,12 +523,13 @@ def send_message(
     content: str = Form(...),
     session: Session = Depends(get_session),
 ):
-    from app.dependencies import create_rag_pipeline
+    from app.dependencies import create_rag_pipeline, get_llm_service
 
     repository = ChatRepository(session)
     chat = repository.get(chat_id)
     if chat is None:
         raise HTTPException(status_code=404, detail="Чат не найден")
+    llm_model_name = get_llm_service().model
 
     content_stripped = content.strip()
     error = None
@@ -583,6 +594,7 @@ def send_message(
             "messages": messages,
             "error": error,
             "content": content if status_code == 422 else "",
+            "llm_model_name": llm_model_name,
             "max_question_chars": MAX_QUESTION_CHARS,
         },
         status_code=status_code,

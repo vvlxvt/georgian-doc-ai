@@ -56,6 +56,17 @@ def test_home_page_renders_shared_layout_and_russian_content():
     assert "/ask" not in response.text
     assert '<div class="app-shell">' in response.text
     assert 'class="nav-link is-active" href="http://testserver/"' in response.text
+    assert "data-vector-upload-status" in response.text
+    assert "Загрузка в векторную БД" in response.text
+    assert 'class="nav-upload-status"' in response.text
+    assert "nav-upload-dots" in response.text
+    upload_status_start = response.text.index("data-vector-upload-status")
+    upload_status_markup = response.text[
+        upload_status_start : upload_status_start + 180
+    ]
+    assert 'role="status"' in upload_status_markup
+    assert 'aria-live="polite"' in upload_status_markup
+    assert "hidden" in upload_status_markup
     assert 'class="dashboard-hero"' in response.text
     assert "/static/css/main.css" in response.text
 
@@ -74,11 +85,15 @@ def test_static_pending_script_is_mounted():
 
     assert response.status_code == 200
     assert 'form.addEventListener("submit"' in response.text
+    assert 'form.matches("[data-vector-upload-form]")' in response.text
+    assert 'document.querySelector("[data-vector-upload-status]")' in response.text
     assert 'form.classList.contains("chat-composer")' in response.text
     assert "messageList.append(messageCard)" in response.text
     assert 'messageInput.value = ""' in response.text
     assert "submittedContent.name = messageInput.name" in response.text
     assert "form.querySelector('input[name=\"chat_ids\"]:checked')" in response.text
+    assert "Array.from(form.elements).some(" in response.text
+    assert 'element.name === "document_ids" && element.checked' in response.text
 
 
 @pytest.mark.parametrize(
@@ -109,6 +124,8 @@ def test_processing_forms_render_accessible_pending_status(
         response.text
     )
     assert "form-pending.js" in response.text
+    if path == "/upload":
+        assert "data-vector-upload-form" in response.text
 
 
 def test_documents_page_renders_empty_state(web_session_factory):
@@ -148,13 +165,23 @@ def test_documents_page_renders_chat_selection_and_create_form(web_session_facto
     assert 'name="document_ids"' in response.text
     assert f'value="{document_id}"' in response.text
     assert 'form="create-chat-form"' in response.text
-    assert response.text.index('class="document-chat-select"') < response.text.index(
-        'class="document-card-content"'
+    assert 'aria-label="Выбрать document.pdf для чата"' in response.text
+    assert "Выбрать для чата</span>" not in response.text
+    document_name_position = response.text.index('class="document-card-name"')
+    assert response.text.index("</label>") < document_name_position
+    assert (
+        response.text.index("document.pdf", document_name_position)
+        > document_name_position
     )
+    assert "document-file-extension" not in response.text
+    assert 'class="document-page-count">0 стр.</span>' in response.text
+    assert 'class="document-status-empty">Нет статусов страниц</span>' in response.text
+    assert "document-card-name" in response.text
     assert 'class="document-file-mark"' not in response.text
     assert 'id="create-chat-form"' in response.text
     assert 'action="http://testserver/chats"' in response.text
     assert "Начать чат" in response.text
+    assert "Обсудите с AI-ассистентом содержание документа." in response.text
 
 
 def test_documents_page_chat_form_creates_chat_from_selected_documents(
@@ -313,6 +340,24 @@ def test_documents_page_renders_database_data_escaped(web_session_factory):
                 status=PageStatus.OCR_FAILED,
             )
         )
+        session.add_all(
+            [
+                DocumentPage(
+                    document_id=document.id,
+                    page_number=2,
+                    content_hash="c" * 64,
+                    status=PageStatus.PARSED,
+                    text="Extracted text",
+                ),
+                DocumentPage(
+                    document_id=document.id,
+                    page_number=3,
+                    content_hash="d" * 64,
+                    status=PageStatus.OCR,
+                    text="Recognized text",
+                ),
+            ]
+        )
         session.commit()
 
     application = create_app(session_factory=web_session_factory)
@@ -320,9 +365,15 @@ def test_documents_page_renders_database_data_escaped(web_session_factory):
         response = client.get("/documents")
 
     assert response.status_code == 200
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in response.text
     assert "&lt;script&gt;alert(1)&lt;/script&gt;.pdf" in response.text
     assert "<script>alert(1)</script>.pdf" not in response.text
     assert "Ошибка OCR: 1" in response.text
+    assert "Распознано OCR: 1" in response.text
+    assert "Текст извлечён: 1" in response.text
+    assert 'class="status-badge status-badge--error"' in response.text
+    assert 'class="status-badge status-badge--ocr"' in response.text
+    assert 'class="status-badge status-badge--parsed"' in response.text
 
 
 def test_documents_page_links_to_and_serves_original_pdf(
@@ -354,7 +405,8 @@ def test_documents_page_links_to_and_serves_original_pdf(
         original = client.get(f"/documents/{document_id}/original")
 
     assert f'href="http://testserver/documents/{document_id}/original"' in listing.text
-    assert "contract.pdf</a>" in listing.text
+    assert 'aria-label="contract.pdf"' in listing.text
+    assert ">contract.pdf</a>" in listing.text
     assert original.status_code == 200
     assert original.headers["content-type"] == "application/pdf"
     assert original.headers["content-disposition"].startswith("inline;")
@@ -391,7 +443,8 @@ def test_documents_page_links_to_matching_pdf_in_input_directory(
         original = client.get(f"/documents/{document_id}/original")
 
     assert f"/documents/{document_id}/original" in listing.text
-    assert "cli-document.pdf</a>" in listing.text
+    assert 'aria-label="cli-document.pdf"' in listing.text
+    assert ">cli-document.pdf</a>" in listing.text
     assert original.status_code == 200
     assert original.content == pdf_bytes
 
@@ -801,7 +854,14 @@ def test_chat_view_returns_404_for_missing(web_session_factory):
     assert response.status_code == 404
 
 
-def test_chat_view_renders_document_and_messages(web_session_factory):
+def test_chat_view_renders_document_and_messages(web_session_factory, monkeypatch):
+    from app import dependencies
+
+    monkeypatch.setattr(
+        dependencies,
+        "get_llm_service",
+        lambda: SimpleNamespace(model="provider/model-v1"),
+    )
     chat_id = add_web_chat(web_session_factory)
     with web_session_factory() as session:
         from app.models import Message, MessageRole
@@ -848,6 +908,7 @@ def test_chat_view_renders_document_and_messages(web_session_factory):
     assert positions == sorted(positions)
     assert response.text.count('class="message-card message-user"') == 2
     assert response.text.count('class="message-card message-assistant"') == 2
+    assert response.text.count("Ассистент / provider/model-v1") == 2
 
 
 def test_send_message_empty_content_returns_422(web_session_factory):

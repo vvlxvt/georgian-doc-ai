@@ -15,7 +15,10 @@ document.querySelectorAll(".chat-sidebar-delete-form").forEach((form) => {
 
 document.querySelectorAll("[data-document-chat-form]").forEach((form) => {
   form.addEventListener("submit", (event) => {
-    if (!form.querySelector('input[name="document_ids"]:checked')) {
+    const hasSelectedDocument = Array.from(form.elements).some(
+      (element) => element.name === "document_ids" && element.checked,
+    );
+    if (!hasSelectedDocument) {
       event.preventDefault();
       const pendingStatus = form.querySelector("[data-pending-status]");
       if (pendingStatus) {
@@ -46,6 +49,13 @@ document.querySelectorAll("form[data-pending-message]").forEach((form) => {
 
     if (!pendingStatus || !submitButton) {
       return;
+    }
+
+    if (form.matches("[data-vector-upload-form]")) {
+      const uploadStatus = document.querySelector("[data-vector-upload-status]");
+      if (uploadStatus) {
+        uploadStatus.hidden = false;
+      }
     }
 
     pendingStatus.textContent = form.dataset.pendingMessage;

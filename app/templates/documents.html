@@ -43,39 +43,41 @@
     <div class="document-list">
       {% for entry in documents %}
         <article class="document-card">
-          <label class="document-chat-select">
+          <label
+            class="document-chat-select"
+            aria-label="Выбрать {{ entry.document.filename }} для чата"
+          >
             <input
               type="checkbox"
               name="document_ids"
               value="{{ entry.document.id }}"
               form="create-chat-form"
             >
-            <span>Выбрать для чата</span>
           </label>
-          <div class="document-card-content">
-            <div class="document-card-heading">
-              <h2>
-                {% if entry.original_available %}
-                  <a href="{{ url_for('document_original', document_id=entry.document.id) }}">{{ entry.document.filename }}</a>
-                {% else %}
-                  {{ entry.document.filename }}
-                {% endif %}
-              </h2>
-              <span class="document-date">Добавлен {{ entry.document.created_at.strftime("%d.%m.%Y") }}</span>
-            </div>
-            <div class="document-metadata">
-              <span class="document-page-count"><span aria-hidden="true">▤</span> {{ entry.page_count }} стр.</span>
-              {% if entry.statuses %}
-                <ul class="status-list" aria-label="Статусы обработки страниц">
-                  {% for status in entry.statuses %}
-                    <li><span class="status-badge">{{ status.label }}: {{ status.count }}</span></li>
-                  {% endfor %}
-                </ul>
-              {% else %}
-                <span class="muted-text">Страницы ещё не зарегистрированы.</span>
-              {% endif %}
-            </div>
-          </div>
+          <h2 class="document-card-name">
+            {% if entry.original_available %}
+              <a
+                href="{{ url_for('document_original', document_id=entry.document.id) }}"
+                aria-label="{{ entry.document.filename }}"
+              >{{ entry.document.filename }}</a>
+            {% else %}
+              {{ entry.document.filename }}
+            {% endif %}
+          </h2>
+          <span class="document-page-count">{{ entry.page_count }} стр.</span>
+          {% if entry.statuses %}
+            <ul class="status-list" aria-label="Статусы обработки страниц">
+              {% for status in entry.statuses %}
+                <li>
+                  <span class="status-badge status-badge--{{ status.class_name }}">
+                    {{ status.label }}: {{ status.count }}
+                  </span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <span class="document-status-empty">Нет статусов страниц</span>
+          {% endif %}
           <form
             class="document-delete-form"
             method="post"
@@ -100,6 +102,7 @@
       data-pending-label="Создаём чат..."
     >
       <button class="button button-primary" type="submit">Начать чат</button>
+      <p class="document-chat-hint">Обсудите с AI-ассистентом содержание документа.</p>
       <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
     </form>
 

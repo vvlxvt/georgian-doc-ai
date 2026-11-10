@@ -28,7 +28,7 @@
         {% for message in messages %}
         <li class="message-card message-{{ message.role }}">
           <div class="message-header">
-            <span class="message-role">{{ "Вы" if message.role == "user" else "Ассистент" }}</span>
+            <span class="message-role">{{ "Вы" if message.role == "user" else "Ассистент / " ~ llm_model_name }}</span>
             <span class="message-time">{{ message.created_at_display }}</span>
           </div>
           <div class="message-text">{{ message.content }}</div>

@@ -87,6 +87,58 @@
   transition: background-color 150ms ease, color 150ms ease;
 }
 
+.nav-upload-group {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.nav-upload-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.8rem;
+  color: #c7d7c8;
+  font-size: 0.68rem;
+  line-height: 1.3;
+}
+
+.nav-upload-status[hidden] {
+  display: none;
+}
+
+.nav-upload-dots {
+  display: inline-flex;
+  gap: 0.08rem;
+  color: #d7ffe0;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 0.8;
+}
+
+.nav-upload-dots span {
+  animation: nav-upload-dot-pulse 900ms ease-in-out infinite;
+  text-shadow: 0 0 0.35rem #91ffac;
+}
+
+.nav-upload-dots span:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.nav-upload-dots span:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+@keyframes nav-upload-dot-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
 .nav-link::before {
   display: grid;
   width: 1.2rem;
@@ -612,6 +664,14 @@
 
   .nav-link::before {
     width: auto;
+  }
+
+  .nav-upload-group {
+    flex: 0 0 auto;
+  }
+
+  .nav-upload-status {
+    padding-inline: 0.6rem;
   }
 
   .sidebar-note,

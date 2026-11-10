@@ -31,7 +31,21 @@
           {% set chats_url = url_for('chats') %}
           <a class="nav-link{% if current_path == home_url.path %} is-active{% endif %}" href="{{ home_url }}" {% if current_path == home_url.path %}aria-current="page"{% endif %}>Главная</a>
           <a class="nav-link{% if current_path == documents_url.path or current_path.startswith(documents_url.path + '/') %} is-active{% endif %}" href="{{ documents_url }}" {% if current_path == documents_url.path or current_path.startswith(documents_url.path + '/') %}aria-current="page"{% endif %}>Документы</a>
-          <a class="nav-link{% if current_path == upload_url.path %} is-active{% endif %}" href="{{ upload_url }}" {% if current_path == upload_url.path %}aria-current="page"{% endif %}>Загрузить PDF</a>
+          <div class="nav-upload-group">
+            <a class="nav-link{% if current_path == upload_url.path %} is-active{% endif %}" href="{{ upload_url }}" {% if current_path == upload_url.path %}aria-current="page"{% endif %}>Загрузить PDF</a>
+            <div
+              class="nav-upload-status"
+              data-vector-upload-status
+              role="status"
+              aria-live="polite"
+              hidden
+            >
+              <span>Загрузка в векторную БД</span>
+              <span class="nav-upload-dots" aria-hidden="true">
+                <span>.</span><span>.</span><span>.</span>
+              </span>
+            </div>
+          </div>
           <a class="nav-link{% if current_path == chats_url.path or current_path.startswith(chats_url.path + '/') %} is-active{% endif %}" href="{{ chats_url }}" {% if current_path == chats_url.path or current_path.startswith(chats_url.path + '/') %}aria-current="page"{% endif %}>Чаты</a>
         </nav>
         <div class="sidebar-note">
