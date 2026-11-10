@@ -92,8 +92,11 @@ def test_static_pending_script_is_mounted():
     assert 'messageInput.value = ""' in response.text
     assert "submittedContent.name = messageInput.name" in response.text
     assert "form.querySelector('input[name=\"chat_ids\"]:checked')" in response.text
-    assert "Array.from(form.elements).some(" in response.text
-    assert 'element.name === "document_ids" && element.checked' in response.text
+    assert "Array.from(form.elements).filter(" in response.text
+    assert 'element.name === "document_ids" && element.type === "checkbox"' in (
+        response.text
+    )
+    assert "submitButton.disabled = !hasSelectedDocument()" in response.text
 
 
 @pytest.mark.parametrize(
@@ -180,6 +183,8 @@ def test_documents_page_renders_chat_selection_and_create_form(web_session_facto
     assert 'class="document-file-mark"' not in response.text
     assert 'id="create-chat-form"' in response.text
     assert 'action="http://testserver/chats"' in response.text
+    assert "Выберите хотя бы один документ, чтобы начать чат." in response.text
+    assert 'aria-describedby="document-chat-hint"' in response.text
     assert "Начать чат" in response.text
     assert "Обсудите с AI-ассистентом содержание документа." in response.text
 

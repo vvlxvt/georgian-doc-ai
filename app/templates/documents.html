@@ -101,8 +101,14 @@
       data-pending-message="Создаём чат..."
       data-pending-label="Создаём чат..."
     >
-      <button class="button button-primary" type="submit">Начать чат</button>
-      <p class="document-chat-hint">Обсудите с AI-ассистентом содержание документа.</p>
+      <button
+        class="button button-primary"
+        type="submit"
+        aria-describedby="document-chat-hint"
+      >Начать чат с AI-ассистентом</button>
+      <p class="document-chat-hint" id="document-chat-hint">
+        Выберите хотя бы один документ, чтобы начать чат. Обсудите с AI-ассистентом содержание документа.
+      </p>
       <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
     </form>
 

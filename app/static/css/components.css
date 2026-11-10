@@ -331,6 +331,10 @@ h2 {
   opacity: 0.72;
 }
 
+.document-chat-form .button-primary:disabled {
+  cursor: not-allowed;
+}
+
 @keyframes pending-spin {
   to {
     transform: rotate(360deg);

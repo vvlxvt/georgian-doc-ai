@@ -14,13 +14,32 @@ document.querySelectorAll(".chat-sidebar-delete-form").forEach((form) => {
 });
 
 document.querySelectorAll("[data-document-chat-form]").forEach((form) => {
+  const documentCheckboxes = Array.from(form.elements).filter(
+    (element) => element.name === "document_ids" && element.type === "checkbox",
+  );
+  const submitButton = form.querySelector('button[type="submit"]');
+  const pendingStatus = form.querySelector("[data-pending-status]");
+  const hasSelectedDocument = () =>
+    documentCheckboxes.some((checkbox) => checkbox.checked);
+
+  const updateSubmitButton = () => {
+    if (submitButton) {
+      submitButton.disabled = !hasSelectedDocument();
+    }
+    if (hasSelectedDocument() && pendingStatus) {
+      pendingStatus.textContent = "";
+      pendingStatus.hidden = true;
+    }
+  };
+
+  documentCheckboxes.forEach((checkbox) => {
+    checkbox.addEventListener("change", updateSubmitButton);
+  });
+  updateSubmitButton();
+
   form.addEventListener("submit", (event) => {
-    const hasSelectedDocument = Array.from(form.elements).some(
-      (element) => element.name === "document_ids" && element.checked,
-    );
-    if (!hasSelectedDocument) {
+    if (!hasSelectedDocument()) {
       event.preventDefault();
-      const pendingStatus = form.querySelector("[data-pending-status]");
       if (pendingStatus) {
         pendingStatus.textContent = "Выберите документы для чата.";
         pendingStatus.hidden = false;
