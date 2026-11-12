@@ -1,290 +1,271 @@
 # PROJECT_ANALYSIS.md
 
-Контекстный файл для возобновления работы над проектом **Georgian Document RAG prototype**.
-Актуален на 2026-11-08 (ветка `main`, после изменений контекста и интерфейса чата).
+Контекстный файл для возобновления работы над проектом Georgian Document RAG prototype.
+Актуален на 2026-11-12 (ветка `main` после финализации веб-UI и рабочей модели чатов).
 
 ---
 
-## 1. Обзор проекта
+## 1. Что реализовано в текущем состоянии
 
-Прототип системы вопрос-ответ (RAG) над грузинскими PDF-документами.
+Проект представляет собой прототип RAG-системы для грузинских PDF-документов с локальным серверным интерфейсом и чатом по документам.
 
-| Компонент | Выбор |
-|---|---|
-| Язык исходных документов | Грузинский (`kat`) |
-| Язык ответов и пользовательского интерфейса | Русский (`ru`) |
-| Язык кода, идентификаторов, комментариев, тестов, документации | Английский |
-| Извлечение текста | PyMuPDF (родной текст), Tesseract OCR fallback (`kat+eng`, `--psm 3`) |
-| Хранилище чанков | SQLite + SQLAlchemy 2.0 ORM (`Mapped[]`, `DeclarativeBase`) |
-| Векторное хранилище | Qdrant (`qdrant-client`), коллекция `documents`, косинусное расстояние |
-| Эмбеддинги | `sentence-transformers`, `BAAI/bge-m3`, 1024 dims, L2-нормализация |
-| LLM | Ollama (`/api/generate`, non-streaming) или OpenRouter через raw `httpx` |
-| CLI | `main.py` (`preflight`, `index`) |
-| Веб-UI | FastAPI + Jinja2 (серверный рендеринг), аддитивный к CLI |
+На текущий момент в приложении уже есть:
 
-**Языковой split (строго соблюдать):**
-- Документы: `kat`
-- Пользовательский текст и промпты: `ru`
-- Код, тесты, документация: `en`
+- индексирование PDF с извлечением текста через PyMuPDF и OCR-паддингом через Tesseract (`kat+eng`);
+- разбиение текста на чанки и хранение их в SQLite;
+- эмбеддинги через `BAAI/bge-m3` и поиск по Qdrant;
+- генерацию ответов на русском с проверкой цитат по страницам в retrieved context;
+- веб-UI на FastAPI + Jinja2: список документов, загрузка PDF, удаление, проверка оригиналов и просмотр чатов;
+- workflow чатов, привязанных к выбранным документам, с сохранением истории сообщений и источников;
+- same-origin защиту для мутабельных POST-операций и явную валидацию пользовательского ввода.
+
+Основной архитектурный принцип: CLI остаётся базовой точкой входа, а веб-часть является аддитивным интерфейсом над теми же сервисами и моделями данных.
 
 ---
 
-## 2. Стек и ограничения (из AGENTS.md)
+## 2. Языковой split и проектные ограничения
 
-- Python 3.12, типовые подсказки PEP 604 (`str \| None`, `StrEnum`).
-- ORM: SQLAlchemy 2.0.
-- Миграции: Alembic, четыре ревизии (`20261006_01`–`20261108_01`). Схема эволюционирует только через Alembic; `init_db()` — только для тестов и удобства.
-- Тесты: pytest 9, маркер `integration` для реальных Ollama/моделей.
-- Форматирование: black + ruff, line length 88.
-- Запрещено без явного одобрения: LangChain, LlamaIndex, Celery, Redis, OpenRouter структурированный вывод/ретраи/персистентность LLM (см. `LLM_IMPLEMENTATION_QUEUE.md` — не одобрено к реализации).
-- LLM-провайдер по умолчанию: `openrouter` (переключается через `LLM_PROVIDER`; `ollama` — альтернатива; без fallback).
-- `LLM_TOTAL_TIMEOUT` — общий бюджет запроса, не более 300 сек; `LLM_MAX_ATTEMPTS` — 1–3.
-- Tesseract языки: `kat+eng` (по умолчанию).
-- UI: локальный-only, bind `127.0.0.1`, без аутентификации/авторизации.
+Строго соблюдать следующие правила:
 
----
+- исходные документы: грузинский (`kat`);
+- пользовательский текст, интерфейс и ответы: русский (`ru`);
+- код, идентификаторы, комментарии, тесты, документация: английский.
 
-## 3. Структура репозитория
+Из AGENTS.md и текущего кода также следует:
 
-```
-main.py                 CLI entry point (`preflight`, `index`)
-app/
-  config.py             Settings (pydantic-settings, frozen, extra="ignore", .env)
-  database.py           engine, SessionLocal, init_db()
-  models.py             Document, DocumentPage, DocumentChunk, Chat, Message
-  repositories.py       DocumentChunkRepository, ChatRepository
-  pdf.py                PDFReader / PDFPage (текст + рендер страницы 300 DPI, sha256 PNG)
-  ocr.py                OCRProcessor ABC, TesseractOCREngine
-  text.py               TextNormalizer, TextChunk
-  chunking.py           TextChunker (по символам: абзац -> предложение -> слово, overlap словами)
-  embeddings.py         EmbeddingService ABC, HuggingFaceEmbeddingService
-  vector_store.py       VectorStore ABC
-  qdrant_store.py       QdrantVectorStore (проверка совместимости коллекции, индексы payload)
-  indexing.py           ChunkIndexer (embed -> upsert -> удаление старых векторов страницы)
-  pipeline.py           DocumentPipeline (hash-гатированный ингест, native vs OCR)
-  retrieval.py          Retriever (эмбеддинг запроса -> поиск -> фильтр по score)
-  context.py            ContextBuilder (маркеры НАЧАЛО_ИСТОЧНИКА / КОНЕЦ_ИСТОЧНИКА)
-  answer.py             AnswerGenerator (русский промпт, валидация цитат [стр. N])
-  llm.py                LLMService ABC, OllamaLLMService, OpenRouterLLMService, повторы с тайм-аутом
-  rag.py                RAGPipeline (retriever -> контекст -> ответ)
-  dependencies.py       lru_cache сервисы, create_document_pipeline(), reset_application_services()
-  preflight.py          validate_runtime(): схема БД, Qdrant, LLM-провайдер, языки Tesseract
-  web.py                FastAPI factory, статика, проверка origem (защита форм)
-  web_dependencies.py   get_session (request-scoped SQLAlchemy сессия)
-  web_routes.py         маршруты: /, /documents, /upload, /chats, /chats/{id}, /health
-  chat.py               ChatService (чаты scoped to selected documents; persisting ordered messages + sources_json)
-  templates/            Jinja2 (home, documents, upload, chats, chat, base)
-  static/css, static/js — стили и маленькие скрипты
-alembic/                env.py + versions/ (four revisions, включая переименование схемы чатов)
-tests/                  один тест-модуль на app-модуль + test_main.py, conftest.py
-REVIEW_QUEUE.md         все 9 задач [x] Completed
-LLM_IMPLEMENTATION_QUEUE.md предложенные улучшения (не одобрены к реализации)
-.env                    gitignored, реальные секреты
-.env.example            отслеживаемый шаблон, должен быть синхронизирован с Settings и tests/test_config.py
-```
+- Python 3.12, типы в стиле PEP 604 (`str | None`, `StrEnum`);
+- SQLAlchemy 2.0, `Mapped[]`, `DeclarativeBase`;
+- Alembic для миграций; `init_db()` — только для тестов/скриптов, не для основной схемы;
+- pytest 9; реальные LLM/OCR/модели за `@pytest.mark.integration`;
+- formatting: `black` + `ruff`, line length 88;
+- UI локальный-only, привязка к `127.0.0.1`, без аутентификации/авторизации;
+- `LLM_PROVIDER` может быть только `openrouter` или `ollama`; без fallback;
+- OpenRouter структурированный вывод, ретраи и persistence LLM не реализованы и не должны появляться без отдельного одобрения.
 
 ---
 
-## 4. Потоки данных
+## 3. Текущая архитектура
 
-### 4.1 Индексация (`main.py index` → `DocumentPipeline`)
+### 3.1 CLI и ядро
 
-1. `sha256` файла → если документ с таким `file_hash` уже существует, используется существующий (дедупликация).
-2. Для каждой страницы PyMuPDF извлекает родной текст и рендерит страницу в PNG 300 DPI; `content_hash` = `sha256(png)`.
-3. Страница пропускается, если `content_hash` не изменился и статус `PARSED`/`OCR` (идемпотентный повторный ингест).
-4. Если длина родного текста < `min_text_length` (по умолчанию 20) → OCR через Tesseract на рендере.
-5. Текст нормализуется (`TextNormalizer`), разбивается чанкером (`TextChunker`, максимум `CHUNK_MAX_LENGTH` символов, overlap `CHUNK_OVERLAP` слов).
-6. Чанки сохраняются в SQLite (`DocumentChunk`), эмбедятся и апсёртятся в Qdrant (`ChunkIndexer`).
-7. **Порядок отказоустойчивости** (SQLite и Qdrant неатомарны): новые векторы индексируются primero, старые векторы страницы удаляются только после успешной индексации; при ошибке откатывается сессия и восстанавливаются предыдущие векторы.
+Основные модули:
 
-### 4.2 Ответ на вопрос (`RAGPipeline`)
+- `main.py` — cli entry point (`preflight`, `index`);
+- `app/config.py` — `Settings` через `.env`, заморожен и `extra="ignore"`;
+- `app/database.py` — engine/session factory;
+- `app/models.py` — `Document`, `DocumentPage`, `DocumentChunk`, `Chat`, `Message`, `chat_documents`;
+- `app/pdf.py` — чтение PDF, рендер страницы, хеширование контента;
+- `app/ocr.py` — Tesseract OCR engine;
+- `app/text.py` — нормализация текста и helpers для чанков;
+- `app/chunking.py` — разделение по символам/абзацам/предложениям/словам;
+- `app/embeddings.py` — embedding abstraction и `HuggingFaceEmbeddingService`;
+- `app/vector_store.py` — ABC для хранения векторов;
+- `app/qdrant_store.py` — Qdrant-реализация и валидация коллекции;
+- `app/indexing.py` — embed -> upsert -> prune stale vectors;
+- `app/pipeline.py` — hash-гатированный ingestion PDF;
+- `app/retrieval.py` — запрос к Qdrant и фильтрация результатов;
+- `app/context.py` — сбор context и маркеры `НАЧАЛО_ИСТОЧНИКА` / `КОНЕЦ_ИСТОЧНИКА`;
+- `app/answer.py` — проверка цитат, русскоязычный ответ и валидация `[стр. N]`;
+- `app/llm.py` — `LLMService`, `OllamaLLMService`, `OpenRouterLLMService`;
+- `app/rag.py` — единый пайплайн `retriever -> context -> answer`;
+- `app/chat.py` — управление чатами и историями сообщений;
+- `app/dependencies.py` — lru_cache сервисов и `reset_application_services()`.
 
-1. Вопрос эмбеддится, ищутся топ-k чанков в Qdrant (опционально по `document_id(s)` и `score_threshold`).
-2. Контекст собирается с маркерами `НАЧАЛО_ИСТОЧНИКА [стр. N] [ID источника: S1] ... КОНЕЦ_ИСТОЧНИКА`.
-3. Если контекста пуст — фиксированный русский ответ «В предоставленных документах недостаточно информации для ответа.», LLM не вызывается.
-4. Иначе LLM отвечает на русском, каждая事実ческая фраза заканчивается `[стр. N]`.
+### 3.2 Веб-слой
 
----
+Ключевые файлы и маршруты:
 
-## 5. Доменные инварианты (менять только с обоснованием в REVIEW_QUEUE.md)
+- `app/web.py` — FastAPI factory, static mount, same-origin middleware;
+- `app/web_dependencies.py` — request-scoped session;
+- `app/web_routes.py` — страницы и формы: `/`, `/documents`, `/upload`, `/documents/{id}/original`, `/chats`, `/chats/{id}`, `/health`;
+- `app/templates/` — шаблоны Jinja2, UI на русском;
+- `app/static/css` и `app/static/js` — визуальные отступы, pending-state и клиентское поведение чатов.
 
-1. Одна страница на `(document_id, page_number)` — уникальный индекс `uq_document_pages_document_id_page_number`.
-2. Длина чанка измеряется **в символах**, а не в токенах.
-3. Ингест hash-гатирован: родной текст → `sha256(normalized_text)`; OCR-страницы → `sha256(рендер PNG)`. Неизменённая страница со статусом `PARSED`/`OCR` пропускается.
-4. `min_text_length` (по умолчанию 20) решает, нужно ли OCR.
-5. SQLite и Qdrant неатомарны — порядок записи/удаления строго определён (см. раздел 4.1).
-6. Векторы ключатся по `id` чанка; payload: `document_id`, `page_id`, `page_number`, `chunk_index`, `text`. Смена эмбеддинг-модели требует полной переиндексации.
-7. Ответы только по-русски с цитатами `[стр. N]`; модель использует только контекст; текст источника — недоверенные данные (инструкции в документе не выполняются).
-8. Префлайт перед индексацией: Qdrant доступен, LLM-провайдер настроен, Tesseract с языками `kat+eng` установлен.
+Основные веб-функции, уже закреплённые тестами:
 
----
-
-## 6. Конфигурация (`.env.example` + `Settings`)
-
-Все настройки через окружение, `Settings` заморожен (`frozen=True`, `extra="ignore"`).
-
-| Переменная | По умолчанию |
-|---|---|
-| `DATABASE_URL` | `sqlite:///data/app.db` |
-| `QDRANT_URL` | `http://localhost:6333` |
-| `QDRANT_API_KEY` | пусто |
-| `QDRANT_COLLECTION` | `documents` |
-| `EMBEDDING_MODEL` | `BAAI/bge-m3` |
-| `EMBEDDING_SIZE` | `1024` |
-| `OLLAMA_URL` | `http://localhost:11434` |
-| `OLLAMA_MODEL` | `llama3.2:3b` |
-| `LLM_PROVIDER` | `openrouter` (или `ollama`) |
-| `OPENROUTER_URL` | `https://api.openrouter.ai` |
-| `OPENROUTER_API_KEY` | пусто (обязателен при `openrouter`) |
-| `OPENROUTER_MODEL` | `gpt-4o-mini` |
-| `OPENROUTER_CONNECT_TIMEOUT` | `10.0` |
-| `OPENROUTER_READ_TIMEOUT` | `120.0` |
-| `OPENROUTER_SUPPORTS_STRUCTURED_OUTPUT` | `false` |
-| `OPENROUTER_SUPPORTS_JSON_MODE` | `false` |
-| `OPENROUTER_SUPPORTS_STREAMING` | `false` |
-| `LLM_MAX_ATTEMPTS` | `2` (1–3) |
-| `LLM_TOTAL_TIMEOUT` | `180.0` (max 300) |
-| `TESSERACT_LANGUAGES` | `kat+eng` |
-| `CHUNK_MAX_LENGTH` | `1000` |
-| `CHUNK_OVERLAP` | `100` |
-| `MIN_TEXT_LENGTH` | `20` |
-
-Правило: `.env.example` список полей должен совпадать с `Settings` и `tests/test_config.py`. В тестах использовать `Settings(..., _env_file=None)`.
+- страница документов и пагинация;
+- удаление документа вместе с BDD/векторами и оригиналом;
+- защита от cross-origin POST;
+- выбор нескольких документов для создания чата;
+- чат с историей сообщений и сохранением `sources_json`;
+- визуальные индикаторы загрузки/приглашения на форме;
+- рендеринг статических CSS/JS и доступная разметка для pending-state.
 
 ---
 
-## 7. Веб-UI (аддитивный к CLI)
+## 4. Основные потоки данных
 
-Маршруты в `app/web_routes.py`:
-- `GET /` — главная
-- `GET /documents` — список документов с пагинацией, статусами страниц, ссылками на оригиналы
-- `GET/POST /upload` — загрузка PDF (до 50 MiB, проверка `%PDF-`), индексация через `create_document_pipeline()`, копия оригинала в `data/documents/<hash>.pdf` с верификацией SHA-256
-- `GET /documents/{id}/original` — отдача оригинала только при совпадении хеша
-- `POST /documents/{id}/delete` — удаление векторов из Qdrant, строк из БД и файла оригинала
-- `GET/POST /chats`, `GET /chats/{id}` — список чатов, создание и просмотр чата с сообщениями
-- `POST /chats/{id}/messages` — отправка сообщения через `ChatService` (сохраняет пользовательское + ассистентское сообщения, `sources_json`)
-- `POST /chats/delete-selected` — удаление выбранных чатов и их сообщений
-- `POST /chats/{id}/delete`, `GET /health`
+### 4.1 Индексация
 
-Защита: проверка `Origin` при мутирующих POST-запросах (same-only). Текст интерфейса на русском. UI bind только `127.0.0.1`.
+1. PDF загружается и вычисляется хеш содержимого.
+2. Для каждой страницы извлекается текст из PDF и при необходимости делается OCR на PNG-рендере 300 DPI.
+3. Используется `min_text_length` (по умолчанию 20) как порог: короткий текст идёт в OCR.
+4. Текст нормализуется, затем дробится на чанки. Длина чанка остаётся измеримой в символах, а не в токенах.
+5. Чанки сохраняются в SQLite, затем эмбеддинги апсёртятся в Qdrant.
+6. Если страница уже была обработана и её `content_hash` не изменился, повторный проход должен быть идемпотентным для статусов `PARSED` / `OCR`.
 
-Шаблоны: `app/templates/` (`base.html`, `home.html`, `documents.html`, `upload.html`, `ask.html`, `chats.html`, `chat.html`).
+### 4.2 Веб-чаты и запросы
 
-В правом sidebar у чатов есть чекбоксы и кнопка удаления выбранных чатов; POST обрабатывает `ChatRepository.delete_many()` с ORM-cascade сообщений и same-origin проверкой.
-
-Чат:
-- Новые чаты автоматически получают название из имени выбранного документа и даты создания в UTC (`YYYY-MM-DD`); при нескольких документах имена идут в порядке выбора.
-- История сообщений отображается в хронологическом порядке; последние пять ходов (не более 6 000 символов) ограничивают контекст последующих вопросов.
-- При отправке JavaScript сразу добавляет текст вопроса в `message-list`, прокручивает историю вниз и очищает поле. Для POST сохраняется отдельное скрытое поле; пустые и повторные отправки блокируются.
-- После успешного POST поле остаётся пустым; при ошибке валидации введённый текст сохраняется.
-- Ответ показывается один раз в общей истории. Дополнительный список страниц под ответом не отображается; цитаты `[стр. N]` остаются в самом тексте.
-- История помогает интерпретировать уточняющие вопросы и формировать поисковый запрос, но фактическое обоснование ответа берётся только из выбранных документов.
+1. Создание чата идёт по выбранным документам; чат получает заголовок на основе документа и даты если название не задано вручную.
+2. Вопрос отправляется пользователем через web form; он сохраняется вместе с ответом и источниками.
+3. Для ответа берутся только документы, привязанные к текущему чату; история сообщений используется как контекст для уточняющих вопросов, но не как единственное доказательство факта.
+4. Если найдено недостаточно текста — ответ фиксированный: «В предоставленных документах недостаточно информации для ответа.» без вызова LLM.
+5. Если текст есть, генерируется ответ на русском языке с цитатами вида `[стр. N]`, только по найденным source blocks.
 
 ---
 
-## 8. LLM-слой
+## 5. Доменные инварианты
 
-- `LLMService` — абстракция; `call(LLMRequest) → LLMResponse`.
-- `OllamaLLMService` — `/api/generate`, non-streaming.
-- `OpenRouterLLMService` — формат, совместимый с OpenAI Chat Completions, опциональная схема ответа (`response_format`), `provider.require_parameters`.
-- `_post_with_error_mapping` — единый шов сети с повторными попытками (экспоненциальная задержка + jitter), общий бюджет `LLM_TOTAL_TIMEOUT`, категории ошибок (`LLMErrorCategory`), маппинг HTTP-кодов. Повтор только при `retryable`, без неконтролируемых вложенных ретраев.
-- При `LLM_PROVIDER=ollama` проверяется, что модель установлена в Ollama. При `openrouter` требуется `OPENROUTER_API_KEY`, иначе `preflight` упадёт.
-- Никогда не логировать API-ключи, сырые промпты, извлечённый текст документов или сырые ответы модели.
+Изменять эти правила можно только после явной правки в `REVIEW_QUEUE.md` и обоснования архитектурного решения:
 
----
-
-## 9. Тестирование
-
-- 243 passed, 4 deselected (`pytest -m "not integration"`; последнее полное выполнение 2026-11-08).
-- `ruff check --no-cache .` и `black --check .` проходят. На Windows обычный запуск Ruff ранее падал с внутренней ошибкой package cache при сканировании `alembic/versions`; запуск с `--no-cache` проходит.
-- In-memory SQLite (`Base.metadata.create_all` в `conftest.py`), `QdrantClient(":memory:")`.
-- Патчинг по пути импорта, например `app.preflight.httpx.get`.
-- `@pytest.mark.integration` — реальный Ollama / реальная модель (модель загружается только при `RUN_REAL_MODEL_TESTS=1`, иначе skip, чтобы избежать краша интерпретатора на Windows в `torch`).
-- `OllamaLLMService._post` — единственный шов сети; патчить его вместо живого Ollama.
-- `tests/test_config.py` очищает окружение перед проверкой дефолтов.
-- Тестовые функции на уровне модуля (вложенные `def test_` не собираются).
-- Команды:
-  - `.\venv\Scripts\python.exe -m pytest -m "not integration"`
-  - `.\venv\Scripts\python.exe -m pytest -m integration`
-  - `.\venv\Scripts\python.exe -m ruff check .`
-  - `.\venv\Scripts\python.exe -m black --check .`
+1. Одна страница на `(document_id, page_number)`; уникальный индекс `uq_document_pages_document_id_page_number` обязателен.
+2. Размер чанка измеряется в символах, а не токенах.
+3. Ingestion hash-гатирован: родной текст -> `sha256(normalized_text)`, OCR -> `sha256(rendered_png_bytes)`.
+4. `min_text_length` управляет переходом native text -> OCR.
+5. SQLite и Qdrant не атомарны; порядок наращивания/удаления векторов важен и должен сохраняться при реиндексации.
+6. Векторы ключатся по `DocumentChunk.id`; payload содержит `document_id`, `page_id`, `page_number`, `chunk_index`, `text`.
+7. Ответы должны быть на русском, с одной ссылкой `[стр. N]` на предложение/фразу и только по retrieved context.
+8. Префлайт выполняется до индексации: Qdrant доступен, LLM-провайдер настроен, Tesseract имеет языки `kat+eng`.
 
 ---
 
-## 10. Миграции (Alembic)
+## 6. Конфигурация и окружение
 
-- `20261006_01` — создаёт `documents`, `document_pages`, `document_chunks` и уникальный индекс на страницы; идемпотентен (проверяет существующие таблицы/индексы).
-- `20261104_01` — историческая ревизия, первоначально добавлявшая `conversations` и `messages`.
-- `20261107_01` — историческая ревизия связи многие-ко-многим `conversation_documents`.
-- `20261108_01` — приводит активную схему к `chats`, `chat_documents` и `messages.chat_id`.
-- `alembic/env.py` читает `settings.database_url` с фоллбеком на `sqlalchemy.url` из `alembic.ini`.
-- Команды:
-  - `.\venv\Scripts\alembic.exe upgrade head`
-  - `.\venv\Scripts\alembic.exe downgrade base`
+Все настройки идут из окружения через `app/config.py` и должны совпадать с `.env.example` и с assertions в `tests/test_config.py`.
 
----
+Ключевые дефолты:
 
-## 11. Очереди и статус
+- `DATABASE_URL` = `sqlite:///data/app.db`
+- `QDRANT_URL` = `http://localhost:6333`
+- `QDRANT_COLLECTION` = `documents`
+- `EMBEDDING_MODEL` = `BAAI/bge-m3`
+- `EMBEDDING_SIZE` = `1024`
+- `LLM_PROVIDER` = `openrouter`
+- `OLLAMA_URL` = `http://localhost:11434`
+- `OLLAMA_MODEL` = `llama3.2:3b`
+- `TESSERACT_LANGUAGES` = `kat+eng`
+- `CHUNK_MAX_LENGTH` = `1000`
+- `CHUNK_OVERLAP` = `100`
+- `MIN_TEXT_LENGTH` = `20`
 
-- `REVIEW_QUEUE.md`: все 9 задач **[x] Completed** (миграции, проверка Qdrant, индексация, process-scoped сервисы, устойчивость генерации ответов и т.д.).
-- `LLM_IMPLEMENTATION_QUEUE.md`: предложенные улучшения (структурированный вывод, ретраи на уровне провайдера, персистентность запусков LLM, OpenRouter) — **не одобрены к реализации**. Не реализовывать без явного разрешения и разрешения открытых продуктовых решений.
+Правила:
 
----
-
-## 12. Ключевые файлы и их ответственность
-
-| Файл | Отвечает за |
-|---|---|
-| `main.py` | CLI: `preflight` и `index` |
-| `app/config.py` | Все настройки из окружения |
-| `app/database.py` | SQLAlchemy engine/session |
-| `app/models.py` | ORM модели: Document, DocumentPage, DocumentChunk, Chat, Message |
-| `app/repositories.py` | DocumentChunkRepository, ChatRepository |
-| `app/pdf.py` | Чтение PDF, рендер страниц, content-hash |
-| `app/ocr.py` | Tesseract OCR |
-| `app/text.py` | TextNormalizer |
-| `app/chunking.py` | TextChunker (символьное разбиение) |
-| `app/embeddings.py` | EmbeddingService, HuggingFaceEmbeddingService |
-| `app/vector_store.py` | VectorStore ABC |
-| `app/qdrant_store.py` | QdrantVectorStore, совместимость коллекции |
-| `app/indexing.py` | ChunkIndexer (эмбендинг -> upsert -> prune) |
-| `app/pipeline.py` | DocumentPipeline (конечный ингест PDF) |
-| `app/retrieval.py` | Retriever (поиск в Qdrant) |
-| `app/context.py` | ContextBuilder (источники с маркерами) |
-| `app/answer.py` | AnswerGenerator (русский промпт, валидация цитат) |
-| `app/llm.py` | LLMService, Ollama, OpenRouter, повторы |
-| `app/rag.py` | RAGPipeline (retriever -> контекст -> ответ) |
-| `app/chat.py` | ChatService (чаты scoped к документу) |
-| `app/dependencies.py` | lru_cache сервисы, create_document_pipeline, reset_application_services |
-| `app/preflight.py` | validate_runtime (БД, Qdrant, LLM, Tesseract) |
-| `app/web.py` | FastAPI приложение, статика, защита форм |
-| `app/web_dependencies.py` | get_session |
-| `app/web_routes.py` | Все веб-маршруты |
+- тесты должны создавать `Settings(..., _env_file=None)`, чтобы не тянуть локальный `.env` разработчика;
+- `.env` игнорируется git-ом, `.env.example` — tracked template и должен быть синхронизирован;
+- URL, модели и языки не должны быть захардкожены в коде приложения.
 
 ---
 
-## 13. Наблюдения / потенциальные риски
+## 7. Текущий статус веб-функциональности
 
-- **Секреты**: существует `.env` (gitignored), может содержать реальные ключи OpenRouter.
-- **Провайдер по умолчанию `openrouter`** без ключа по умолчанию — `preflight` упадёт с ошибкой, пока не задать `OPENROUTER_API_KEY`.
-- **UI локальный-only** — привязка к `127.0.0.1`, нет аутентификации/авторизации.
-- **Граница SQLite/Qdrant неатомарна** — при сбое между записью чанков в БД и апсёртом в Qdrant возможны несоответствия; порядок действий в `pipeline.py`/`indexing.py` критичен.
-- **Нет кэширования эмбеддингов запроса** — каждый вопрос делает полный forward через `BAAI/bge-m3`.
-- `llm.py` большой (~2400 строк) — содержит абстракцию, обоих провайдеров и логику повторов.
-- `data/app.db` и `data/app.db-journal` существуют в рабочей директории (локальная БД).
-- В `data/input/` есть тестовые PDF: `georgian_scan.pdf`, `georgian_scan_ocr.pdf`, `bad_text.pdf`, `test_page.png`.
+На текущий момент web-подход уже стабилизирован в следующих аспектах:
+
+- домашняя страница рендерится и содержит общую навигацию, hero блок и статус индексации;
+- `/documents` показывает состояние документов и их page status, с поддержкой empty state и безопасной экранизации HTML;
+- на документе доступна ссылка на оригинальный PDF только при корректном подтверждении SHA-256;
+- корректно работает удаление документа вместе с данными и vector cleanup;
+- `POST` на `/upload`, `/documents/{id}/delete`, и мутирующие операции в `/chats` блокируются при несоответствии Origin;
+- чаты создаются из выбранных документов, а история сохраняется в БД;
+- клиентский JS добавляет локальные сообщения, управляет pending state и не даёт отправлять пустой/дублирующий вопрос.
+
+Это важно: UI не является отдельным сервисом с независимой логикой; он поверх текущего ядра RAG и использует те же модели/репозитории.
 
 ---
 
-## 14. Чек-лист при возобновлении работы
+## 8. LLM-слой и safety constraints
 
-1. Проверить `REVIEW_QUEUE.md` и `LLM_IMPLEMENTATION_QUEUE.md` на наличие одобренных задач.
-2. Прочитать модули, которые предстоит менять, + их тест-модули.
-3. Реализовать в `app/`, затем добавить/обновить соответствующий тест-модуль.
-4. Запустить `.\venv\Scripts\python.exe -m ruff check .` и `.\venv\Scripts\python.exe -m black --check .`.
-5. Запустить `.\venv\Scripts\python.exe -m pytest -m "not integration"`.
-6. При изменении поведения — обновить `README.md`, `README_ru.md` и соответствующую очередь.
-7. Не коммитить без запроса пользователя. Не менять историю.
-8. Перед индексацией: `.\venv\Scripts\python.exe main.py preflight`.
-9. При изменении `Settings` — синхронизировать `.env.example` и `tests/test_config.py`.
-10. При изменении схемы БД — новая Alembic-ревизия в стиле(idempotent) существующих.
+В текущем проекте LLM слой остаётся честно разделённым:
+
+- `LLMService` — абстракция для провайдеров;
+- `OllamaLLMService` — HTTP к `/api/generate`;
+- `OpenRouterLLMService` — формат с chat-completions-совместимым payload;
+- ошибки мапятся в доменные категории с ограниченным числом retry-случаев;
+- на пустом контексте LLM не вызывается.
+
+Нельзя:
+
+- логировать ключи, raw prompts, исходный документный текст и сырые ответы провайдеров;
+- скрыто переключать провайдеры без явного `LLM_PROVIDER`;
+- загружать несанкционированные инструкции из документа в исполнение;
+- доверять фактам только по членству citations в retrieved results — это лишь валидация формата, а не доказательство содержательной корректности.
+
+---
+
+## 9. Тестирование и актуальное состояние
+
+Актуальный локальный статус по AGENTS.md:
+
+- `pytest -m "not integration"` — 180 passed, 3 deselected;
+- `ruff check .` и `black --check .` — чисто;
+- `tests/test_web.py` содержит важную проверку интерфейса: health, home, documents, upload, delete, chat creation и form safety.
+
+Важные особенности тестовой стратегии:
+
+- in-memory SQLite через `Base.metadata.create_all()`;
+- `QdrantClient(":memory:")` для vector-store тестов;
+- patching по import path, например `app.preflight.httpx.get`;
+- реальный Ollama/модели ограждены `@pytest.mark.integration` и пропускаются при отсутствии условий запуска;
+- вложенные `def test_...` внутри других функций не должны появляться.
+
+Команды для регулярной проверки:
+
+- `./.venv/Scripts/python.exe -m pytest -m "not integration"`
+- `./.venv/Scripts/python.exe -m pytest -m integration`
+- `./.venv/Scripts/python.exe -m ruff check .`
+- `./.venv/Scripts/python.exe -m black --check .`
+- `./.venv/Scripts/python.exe main.py preflight`
+
+---
+
+## 10. Миграции и схема
+
+Схема обновляется через Alembic, а не через `Base.metadata.create_all()`.
+
+Исторически и в текущем виде важны ревизии:
+
+- `20261006_01` — базовое создание таблиц для документов и страниц;
+- `20261104_01` — историческая ревизия по conversations/messages;
+- `20261107_01` — many-to-many между conversation и documents;
+- `20261108_01` — переход к модели `chats`, `chat_documents`, `messages.chat_id`.
+
+`alembic/env.py` должен читать `settings.database_url` и, если нужно, деградировать к `sqlalchemy.url` из `alembic.ini`.
+
+---
+
+## 11. Очереди и статусы
+
+- `REVIEW_QUEUE.md` — главный журнал всех решений/задач и статусов ревью;
+- `LLM_IMPLEMENTATION_QUEUE.md` — список предложений по LLM pipeline. Эти идеи не являются автоматически утверждённым scope для реализации;
+- до внедрения любой новой LLM-фичи нужно проверить, была ли она явно одобрена и зафиксирована проектным решением.
+
+---
+
+## 12. Ключевые наблюдения / риски
+
+- `.env` может содержать реальные секреты; хранить его только локально и не коммитить.
+- Провайдер по умолчанию `openrouter` требует присутствия ключа; без него `preflight` падает с ошибкой.
+- UI не должен открываться наружу без отдельного решения по безопасности и авторизации.
+- Граница SQLite/Qdrant не атомарна: порядок сохранения и очистки данных критичен для корректной reindexing и низкой потери данных.
+- `llm.py` и `web_routes.py` — самые сложные точки интеграции с внешними сервисами; изменения там требуют тщательного тестового покрытия.
+- В `data/input/` и `data/documents/` находятся локальные PDF-файлы, используемые как рабочие материалы и тестовые ресурсы.
+
+---
+
+## 13. Чек-лист при продолжении разработки
+
+1. Проверить актуальное состояние `REVIEW_QUEUE.md` и `LLM_IMPLEMENTATION_QUEUE.md`.
+2. Прочитать целевые модули и относящиеся тесты до правки.
+3. Реализовать изменения в `app/` и добавить/обновить минимальный тестовый набор.
+4. Запустить lint и форматирование.
+5. Запустить non-integration pytest.
+6. Если меняется поведение UI/LLM/RAG — обновить релевантную документацию и, при необходимости, review queue.
+7. Не коммитить без явного запроса пользователя и не переписывать историю.
+8. Перед индексированием всегда выполнять `main.py preflight`.
+9. При изменении настроек — синхронизировать `.env.example` и `tests/test_config.py`.
+10. При миграциях — добавлять новые Alembic revision в том же безопасном, идемпотентном стиле.
+
+---
+
+## 14. Сводка статуса проекта
+
+Проект уже находится в состоянии рабочей RAG-архитектуры: PDF ingestion, vector search, русскоязычные ответы с citations, локальный веб-UI и чат по документам работают как единый продуктовый слой. Самые сильные точки — чёткое разделение между доменом, сервисами и инфраструктурой, а также наличие проверок на уровне тестов и защит для веб-форм. Наиболее важные риски остаются в зоне внешних подключений (LLM/Qdrant/Tesseract), безопасности web-политик и корректного управления состоянием в логике индексации.
