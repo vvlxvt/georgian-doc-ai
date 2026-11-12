@@ -94,6 +94,11 @@ def test_static_pending_script_is_mounted():
     assert 'editButton.dataset.editQuestion = ""' in response.text
     assert "submittedContent.name = messageInput.name" in response.text
     assert "messageInput.scrollHeight" in response.text
+    assert "messageInput.placeholder = pendingMessage" in response.text
+    assert "sessionStorage.setItem(chatScrollStorageKey, window.location.pathname)" in (
+        response.text
+    )
+    assert 'lastElementChild?.scrollIntoView({ block: "end" })' in response.text
     assert "form.querySelector('input[name=\"chat_ids\"]:checked')" in response.text
     assert "Array.from(form.elements).filter(" in response.text
     assert 'element.name === "document_ids" && element.type === "checkbox"' in (
@@ -788,6 +793,10 @@ def test_shared_layout_displays_recent_chats_in_right_sidebar(web_session_factor
     assert 'placeholder="Выберите чат"' not in chats_response.text
     assert 'aria-label="Отправить вопрос" disabled' not in chats_response.text
     assert 'placeholder="Напишите вопрос..."' in chat_response.text
+    assert (
+        'data-pending-message="Формируем ответ по выбранным документам..."'
+        in chat_response.text
+    )
     assert "<textarea" in chat_response.text
     assert "</textarea>" in chat_response.text
     assert '<span aria-hidden="true">▶</span>' in chat_response.text

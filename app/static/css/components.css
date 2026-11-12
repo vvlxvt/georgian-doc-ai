@@ -134,6 +134,10 @@ h2 {
   width: 100%;
 }
 
+.striped-table th {
+  text-align: left;
+}
+
 .document-card,
 .empty-state {
   padding: clamp(1.2rem, 3vw, 1.75rem);

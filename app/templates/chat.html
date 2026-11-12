@@ -50,13 +50,13 @@
       class="chat-composer"
       action="{{ url_for('send_message', chat_id=chat.id) }}"
       method="post"
-      data-pending-message="Формируем ответ по выбранным документам..."
       data-pending-label="..."
     >
       <label class="visually-hidden" for="content">Ваш вопрос</label>
       <textarea
         id="content"
         name="content"
+        data-pending-message="Формируем ответ по выбранным документам..."
         placeholder="Напишите вопрос..."
         maxlength="{{ max_question_chars }}"
         required
@@ -65,8 +65,14 @@
       <button class="button-primary" type="submit" aria-label="Отправить вопрос">
         <span aria-hidden="true">▶</span>
       </button>
-      <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
-      <span class="visually-hidden" data-question-edit-status role="status" aria-live="polite"></span>
+      <span
+        class="visually-hidden"
+        data-pending-status
+        data-question-edit-status
+        role="status"
+        aria-live="polite"
+        hidden
+      ></span>
     </form>
   </div>
 {% endblock %}
