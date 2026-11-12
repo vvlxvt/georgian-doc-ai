@@ -352,7 +352,7 @@
 }
 
 .chat-sidebar-composer input,
-.chat-composer input {
+.chat-composer textarea {
   width: 100%;
   min-width: 0;
   min-height: 2.65rem;
@@ -365,7 +365,7 @@
 }
 
 .chat-sidebar-composer input::placeholder,
-.chat-composer input::placeholder {
+.chat-composer textarea::placeholder {
   color: var(--color-muted);
 }
 
@@ -458,6 +458,23 @@
   overflow-wrap: anywhere;
 }
 
+.message-edit-question {
+  justify-self: end;
+  padding: 0;
+  border: 0;
+  color: var(--color-accent-dark);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.message-edit-question:hover {
+  color: var(--color-accent);
+}
+
 .message-sources {
   display: flex;
   flex-wrap: wrap;
@@ -478,7 +495,30 @@
 .chat-composer {
   position: sticky;
   bottom: 0.75rem;
-  box-shadow: var(--shadow-card);
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 1.5rem;
+  box-shadow: inset 0 0 0 1px var(--color-border), var(--shadow-card);
+}
+
+.chat-composer textarea {
+  display: block;
+  flex: none;
+  width: 100%;
+  max-width: 100%;
+  min-height: 3.55rem;
+  padding: 0.6rem 3.4rem 0.6rem 0.8rem;
+  border-radius: inherit;
+  overflow: hidden;
+  resize: none;
+}
+
+.chat-composer button {
+  position: absolute;
+  right: 0.45rem;
+  bottom: 0.45rem;
 }
 
 .chat-composer button:hover {

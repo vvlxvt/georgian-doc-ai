@@ -161,7 +161,9 @@ one-shot search across the entire library.
    answer is produced; a failed LLM request does not add an unanswered question
    to chat history.
 3. **View history:** Reopening a chat displays all persisted user and
-   assistant messages with their source page references.
+   assistant messages with their source page references. The message list can
+   be scrolled, and a previous question can be loaded into the composer,
+   edited, and sent as a new turn. Questions remain scoped to their chat.
 4. **Delete a chat:** Deleting a chat removes it and all its
    messages. Its source documents remain in the library.
 

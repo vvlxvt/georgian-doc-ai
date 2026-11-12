@@ -13,6 +13,52 @@ document.querySelectorAll(".chat-sidebar-delete-form").forEach((form) => {
   });
 });
 
+document.querySelectorAll(".chat-main").forEach((chatMain) => {
+  const messageList = chatMain.querySelector(".message-list");
+  const messageInput = chatMain.querySelector('.chat-composer [name="content"]');
+  const editStatus = chatMain.querySelector("[data-question-edit-status]");
+
+  if (!messageList || !messageInput || !editStatus) {
+    return;
+  }
+
+  const resizeMessageInput = () => {
+    if (messageInput instanceof HTMLTextAreaElement) {
+      messageInput.style.removeProperty("width");
+      messageInput.style.height = "auto";
+      messageInput.style.height = `${messageInput.scrollHeight}px`;
+    }
+  };
+
+  messageInput.addEventListener("input", resizeMessageInput);
+  window.addEventListener("resize", resizeMessageInput);
+  resizeMessageInput();
+
+  messageList.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+
+    const editButton = event.target.closest("[data-edit-question]");
+    if (!editButton) {
+      return;
+    }
+
+    const question = editButton
+      .closest(".message-card")
+      ?.querySelector(".message-text")?.textContent;
+    if (!question) {
+      return;
+    }
+
+    messageInput.value = question;
+    resizeMessageInput();
+    messageInput.focus();
+    editStatus.textContent =
+      "Вопрос загружен. Отредактируйте его и отправьте повторно.";
+  });
+});
+
 document.querySelectorAll("[data-document-chat-form]").forEach((form) => {
   const documentCheckboxes = Array.from(form.elements).filter(
     (element) => element.name === "document_ids" && element.type === "checkbox",
@@ -84,7 +130,7 @@ document.querySelectorAll("form[data-pending-message]").forEach((form) => {
     submitButton.disabled = true;
     form.setAttribute("aria-busy", "true");
 
-    const messageInput = form.querySelector('input[name="content"]');
+    const messageInput = form.querySelector('[name="content"]');
     const messageList = document.querySelector(".message-list");
 
     if (
@@ -126,10 +172,17 @@ document.querySelectorAll("form[data-pending-message]").forEach((form) => {
       messageText.className = "message-text";
       messageText.textContent = content;
 
+      const editButton = document.createElement("button");
+      editButton.className = "message-edit-question";
+      editButton.type = "button";
+      editButton.dataset.editQuestion = "";
+      editButton.textContent = "Редактировать вопрос";
+
       messageHeader.append(messageRole, messageTime);
-      messageCard.append(messageHeader, messageText);
+      messageCard.append(messageHeader, messageText, editButton);
       messageList.append(messageCard);
       messageInput.value = "";
+      messageInput.dispatchEvent(new Event("input", { bubbles: true }));
       messageList.scrollTop = messageList.scrollHeight;
     }
   });

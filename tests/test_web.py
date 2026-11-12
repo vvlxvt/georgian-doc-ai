@@ -90,7 +90,10 @@ def test_static_pending_script_is_mounted():
     assert 'form.classList.contains("chat-composer")' in response.text
     assert "messageList.append(messageCard)" in response.text
     assert 'messageInput.value = ""' in response.text
+    assert 'event.target.closest("[data-edit-question]")' in response.text
+    assert 'editButton.dataset.editQuestion = ""' in response.text
     assert "submittedContent.name = messageInput.name" in response.text
+    assert "messageInput.scrollHeight" in response.text
     assert "form.querySelector('input[name=\"chat_ids\"]:checked')" in response.text
     assert "Array.from(form.elements).filter(" in response.text
     assert 'element.name === "document_ids" && element.type === "checkbox"' in (
@@ -785,6 +788,8 @@ def test_shared_layout_displays_recent_chats_in_right_sidebar(web_session_factor
     assert 'placeholder="Выберите чат"' not in chats_response.text
     assert 'aria-label="Отправить вопрос" disabled' not in chats_response.text
     assert 'placeholder="Напишите вопрос..."' in chat_response.text
+    assert "<textarea" in chat_response.text
+    assert "</textarea>" in chat_response.text
     assert '<span aria-hidden="true">▶</span>' in chat_response.text
     assert 'class="chat-aside"' not in chat_response.text
     assert 'class="chat-main"' in chat_response.text
@@ -913,6 +918,8 @@ def test_chat_view_renders_document_and_messages(web_session_factory, monkeypatc
     assert positions == sorted(positions)
     assert response.text.count('class="message-card message-user"') == 2
     assert response.text.count('class="message-card message-assistant"') == 2
+    assert response.text.count("data-edit-question") == 2
+    assert response.text.count("Редактировать вопрос") == 2
     assert response.text.count("Ассистент / provider/model-v1") == 2
 
 
@@ -979,8 +986,10 @@ def test_send_message_persists_user_and_assistant(web_session_factory, monkeypat
     assert first_response.status_code == 200
     assert second_response.status_code == 200
     assert history_response.status_code == 200
-    composer = second_response.text.split('id="content"', 1)[1].split(">", 1)[0]
-    assert 'value=""' in composer
+    composer = second_response.text.split('id="content"', 1)[1].split("</textarea>", 1)[
+        0
+    ]
+    assert composer.endswith(">")
     assert "Использованные страницы" not in second_response.text
     assert 'class="message-sources"' not in history_response.text
     expected_history = [
@@ -1151,7 +1160,7 @@ def test_send_message_rejects_messages_above_maximum_length(web_session_factory)
 
     assert response.status_code == 422
     assert "не должно превышать 2000 символов" in response.text
-    assert f'value="{"a" * 2001}"' in response.text
+    assert f'>{"a" * 2001}</textarea>' in response.text
 
 
 def test_delete_chat_removes_record(web_session_factory):

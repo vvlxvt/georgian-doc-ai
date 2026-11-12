@@ -32,6 +32,11 @@
             <span class="message-time">{{ message.created_at_display }}</span>
           </div>
           <div class="message-text">{{ message.content }}</div>
+          {% if message.role == "user" %}
+            <button class="message-edit-question" type="button" data-edit-question>
+              Редактировать вопрос
+            </button>
+          {% endif %}
         </li>
         {% endfor %}
       {% else %}
@@ -49,20 +54,19 @@
       data-pending-label="..."
     >
       <label class="visually-hidden" for="content">Ваш вопрос</label>
-      <input
+      <textarea
         id="content"
         name="content"
-        type="text"
         placeholder="Напишите вопрос..."
-        value="{{ content or '' }}"
         maxlength="{{ max_question_chars }}"
-        autocomplete="off"
         required
-      >
+        rows="1"
+      >{{ content or '' }}</textarea>
       <button class="button-primary" type="submit" aria-label="Отправить вопрос">
         <span aria-hidden="true">▶</span>
       </button>
       <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
+      <span class="visually-hidden" data-question-edit-status role="status" aria-live="polite"></span>
     </form>
   </div>
 {% endblock %}
