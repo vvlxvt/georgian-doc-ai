@@ -41,6 +41,7 @@ def test_pdf_reader_reports_native_text_extraction(monkeypatch):
     pages = list(reader.pages())
 
     assert pages[0].text == "Native text"
+    assert pages[0].total_pages == 1
     assert events == [
         ("extraction", "processing"),
         ("extraction", "completed"),

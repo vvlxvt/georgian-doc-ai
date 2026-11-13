@@ -11,6 +11,7 @@ class PDFPage:
     page_number: int
     text: str
     content_hash: str
+    total_pages: int = 0
 
 
 class PDFReader:
@@ -25,7 +26,8 @@ class PDFReader:
 
     def pages(self) -> Iterator[PDFPage]:
         with pymupdf.open(self.path) as doc:
-            for page_index in range(len(doc)):
+            total_pages = len(doc)
+            for page_index in range(total_pages):
                 self._report_progress("processing")
                 page = doc.load_page(page_index)
 
@@ -43,6 +45,7 @@ class PDFReader:
                     page_number=page_index + 1,
                     text=text,
                     content_hash=content_hash,
+                    total_pages=total_pages,
                 )
 
     def render_page(self, page_number: int) -> bytes:

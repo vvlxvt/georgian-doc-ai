@@ -21,6 +21,7 @@ class DocumentPipeline:
         chunk_indexer,
         min_text_length: int = MIN_TEXT_LENGTH,
         progress_callback: Callable[[str, str], None] | None = None,
+        page_progress_callback: Callable[[int, int], None] | None = None,
     ):
         self.session = session
         self.ocr_processor = ocr_processor
@@ -30,6 +31,7 @@ class DocumentPipeline:
         self.chunk_indexer = chunk_indexer
         self.min_text_length = min_text_length
         self.progress_callback = progress_callback
+        self.page_progress_callback = page_progress_callback
 
     def _get_page(
         self,
@@ -79,12 +81,21 @@ class DocumentPipeline:
             progress_callback=self.progress_callback,
         )
 
+        page_count_reported = False
         for page in reader.pages():
+            if self.page_progress_callback is not None and not page_count_reported:
+                self.page_progress_callback(page.total_pages, page.total_pages)
+                page_count_reported = True
             self._process_page(
                 document=document,
                 page=page,
                 reader=reader,
             )
+            if self.page_progress_callback is not None:
+                self.page_progress_callback(
+                    page.total_pages - page.page_number,
+                    page.total_pages,
+                )
 
         return document.id
 

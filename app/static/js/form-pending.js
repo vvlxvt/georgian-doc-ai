@@ -127,11 +127,11 @@ document.querySelectorAll("form[data-vector-upload-form]").forEach((form) => {
   const progress = document.querySelector("[data-upload-progress]");
   const badge = progress?.querySelector("[data-upload-badge]");
   const statusMessage = progress?.querySelector("[data-upload-message]");
-  const submitButton = form.querySelector('button[type="submit"]');
-  const originalButtonLabel = submitButton?.textContent;
+  const pagesRemaining = progress?.querySelector("[data-pages-remaining]");
+  const fileInput = form.querySelector('input[type="file"]');
   const uploadStatus = document.querySelector("[data-vector-upload-status]");
 
-  if (!progress || !badge || !statusMessage || !submitButton) {
+  if (!progress || !badge || !statusMessage || !fileInput) {
     return;
   }
 
@@ -168,6 +168,10 @@ document.querySelectorAll("form[data-vector-upload-form]").forEach((form) => {
   };
 
   const resetProgress = () => {
+    if (pagesRemaining) {
+      pagesRemaining.textContent = "";
+      pagesRemaining.hidden = true;
+    }
     progress.querySelectorAll("[data-upload-step]").forEach((row) => {
       row.dataset.status = "pending";
       row.hidden = row.dataset.uploadStep === "ocr";
@@ -189,6 +193,16 @@ document.querySelectorAll("form[data-vector-upload-form]").forEach((form) => {
   };
 
   const handleUploadEvent = (uploadEvent) => {
+    if (uploadEvent.event === "page_progress") {
+      if (pagesRemaining) {
+        pagesRemaining.textContent =
+          `Осталось обработать страниц: ${uploadEvent.remaining_pages} ` +
+          `из ${uploadEvent.total_pages}.`;
+        pagesRemaining.hidden = false;
+      }
+      return false;
+    }
+
     if (uploadEvent.event === "progress") {
       setStepStatus(uploadEvent.step, uploadEvent.status);
       if (uploadEvent.status === "processing") {
@@ -261,6 +275,12 @@ document.querySelectorAll("form[data-vector-upload-form]").forEach((form) => {
     }
   };
 
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files.length && form.getAttribute("aria-busy") !== "true") {
+      form.requestSubmit();
+    }
+  });
+
   form.addEventListener("submit", async (event) => {
     if (event.defaultPrevented || form.getAttribute("aria-busy") === "true") {
       event.preventDefault();
@@ -268,12 +288,12 @@ document.querySelectorAll("form[data-vector-upload-form]").forEach((form) => {
     }
 
     event.preventDefault();
+    const formData = new FormData(form);
     resetProgress();
     setStepStatus("upload", "processing");
     setOverallStatus("processing", "Файл передаётся на сервер.");
     form.setAttribute("aria-busy", "true");
-    submitButton.disabled = true;
-    submitButton.textContent = form.dataset.pendingLabel || "Загрузка...";
+    fileInput.disabled = true;
 
     if (form.matches("[data-vector-upload-form]")) {
       if (uploadStatus) {
@@ -284,7 +304,7 @@ document.querySelectorAll("form[data-vector-upload-form]").forEach((form) => {
     try {
       const response = await fetch(form.action, {
         method: "POST",
-        body: new FormData(form),
+        body: formData,
         headers: { Accept: "text/event-stream" },
       });
 
@@ -307,8 +327,8 @@ document.querySelectorAll("form[data-vector-upload-form]").forEach((form) => {
       );
     } finally {
       form.removeAttribute("aria-busy");
-      submitButton.disabled = false;
-      submitButton.textContent = originalButtonLabel;
+      fileInput.disabled = false;
+      fileInput.value = "";
     }
   });
 });

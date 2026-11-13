@@ -419,11 +419,11 @@ async def upload_document(
                 "text/html" in accept_header
                 and "text/event-stream" not in accept_header
             )
-            event_queue: queue.Queue[dict[str, str]] = queue.Queue(maxsize=128)
+            event_queue: queue.Queue[dict[str, object]] = queue.Queue(maxsize=128)
             active_step = "extraction"
             ocr_failed = False
 
-            def enqueue_event(event: dict[str, str]) -> None:
+            def enqueue_event(event: dict[str, object]) -> None:
                 try:
                     event_queue.put_nowait(event)
                 except queue.Full:
@@ -450,6 +450,15 @@ async def upload_document(
                     )
                 enqueue_event(event)
 
+            def report_page_progress(remaining_pages: int, total_pages: int) -> None:
+                enqueue_event(
+                    {
+                        "event": "page_progress",
+                        "remaining_pages": remaining_pages,
+                        "total_pages": total_pages,
+                    }
+                )
+
             if not wants_html_response:
                 enqueue_event(
                     {
@@ -471,6 +480,9 @@ async def upload_document(
                         session,
                         progress_callback=(
                             None if wants_html_response else report_progress
+                        ),
+                        page_progress_callback=(
+                            None if wants_html_response else report_page_progress
                         ),
                     ).process(str(temp_path))
 

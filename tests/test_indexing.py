@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from qdrant_client import QdrantClient
 
@@ -279,7 +281,13 @@ def test_index_chunks_is_idempotent(session):
     assert chunk.id in vector_store.items
 
 
+@pytest.mark.integration
 def test_index_chunks_with_real_services(session):
+    if os.getenv("RUN_REAL_MODEL_TESTS") != "1":
+        pytest.skip(
+            "set RUN_REAL_MODEL_TESTS=1 to run against the real embedding model"
+        )
+
     document = Document(
         filename="test.pdf",
         file_hash="document-hash",

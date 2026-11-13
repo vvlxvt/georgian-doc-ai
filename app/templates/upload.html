@@ -38,8 +38,6 @@
       method="post"
       enctype="multipart/form-data"
       data-vector-upload-form
-      data-pending-message="Файл загружается и индексируется. Это может занять некоторое время."
-      data-pending-label="Идёт индексация..."
     >
       <div class="upload-card-heading">
         <span class="upload-card-icon" aria-hidden="true">↑</span>
@@ -51,11 +49,10 @@
       <div class="form-field">
         <label for="pdf-file">PDF-файл</label>
         <input id="pdf-file" name="file" type="file" accept="application/pdf,.pdf" required aria-describedby="file-help">
-        <p class="field-help" id="file-help">Только формат PDF · до {{ max_upload_mib }} МиБ</p>
-      </div>
-      <div class="upload-actions">
-        <button class="button button-primary" type="submit">Загрузить и проиндексировать <span aria-hidden="true">→</span></button>
-        <p class="form-pending" data-pending-status role="status" aria-live="polite" hidden></p>
+        <p class="field-help" id="file-help">Выбор файла сразу начнёт загрузку и индексацию. Только PDF · до {{ max_upload_mib }} МиБ.</p>
+        <noscript>
+          <p class="field-help">Для автоматического начала обработки включите JavaScript.</p>
+        </noscript>
       </div>
       <div class="upload-security-note">
         <span aria-hidden="true">✓</span>
@@ -80,6 +77,7 @@
       <p class="upload-progress-message" data-upload-message role="status" aria-live="polite">
         Выберите PDF, чтобы начать обработку.
       </p>
+      <p class="upload-pages-remaining" data-pages-remaining aria-live="polite" hidden></p>
       <ol class="upload-steps" data-upload-stepper>
         <li data-upload-step="upload" data-status="pending">
           <span class="upload-step-indicator" aria-hidden="true">○</span>

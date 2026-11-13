@@ -118,6 +118,7 @@ def get_chunk_indexer() -> ChunkIndexer:
 def create_document_pipeline(
     session,
     progress_callback: Callable[[str, str], None] | None = None,
+    page_progress_callback: Callable[[int, int], None] | None = None,
 ) -> DocumentPipeline:
     """Build the ingestion pipeline. The caller owns the session lifecycle."""
     return DocumentPipeline(
@@ -131,6 +132,7 @@ def create_document_pipeline(
         chunk_indexer=get_chunk_indexer(),
         min_text_length=settings.min_text_length,
         progress_callback=progress_callback,
+        page_progress_callback=page_progress_callback,
     )
 
 

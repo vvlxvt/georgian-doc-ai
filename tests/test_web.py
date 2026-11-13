@@ -110,50 +110,38 @@ def test_static_pending_script_is_mounted():
         response.text
     )
     assert "submitButton.disabled = !hasSelectedDocument()" in response.text
+    assert 'fileInput.addEventListener("change"' in response.text
+    assert "form.requestSubmit()" in response.text
     assert 'form.addEventListener("submit", async (event) =>' in response.text
     assert 'response.headers.get("content-type")?.includes("text/event-stream")' in (
         response.text
     )
     assert 'uploadEvent.event === "completed"' in response.text
     assert 'uploadEvent.event === "failed"' in response.text
+    assert 'uploadEvent.event === "page_progress"' in response.text
+    assert "Осталось обработать страниц:" in response.text
+    assert "pagesRemaining.hidden = true" in response.text
 
 
-@pytest.mark.parametrize(
-    ("path", "pending_message", "pending_label", "layout_class"),
-    [
-        (
-            "/upload",
-            "Файл загружается и индексируется",
-            "Идёт индексация...",
-            "upload-layout",
-        ),
-    ],
-)
-def test_processing_forms_render_accessible_pending_status(
-    path,
-    pending_message,
-    pending_label,
-    layout_class,
-):
+def test_upload_form_starts_processing_when_pdf_is_selected():
     with TestClient(app) as client:
-        response = client.get(path)
+        response = client.get("/upload")
 
     assert response.status_code == 200
-    assert pending_message in response.text
-    assert pending_label in response.text
-    assert f'class="{layout_class}"' in response.text
-    assert 'data-pending-status role="status" aria-live="polite" hidden' in (
-        response.text
-    )
+    assert 'class="upload-layout"' in response.text
+    assert 'id="pdf-file" name="file" type="file"' in response.text
+    assert "Выбор файла сразу начнёт загрузку и индексацию." in response.text
+    assert '<button class="button button-primary" type="submit">' not in response.text
+    assert "<noscript>" in response.text
     assert "form-pending.js" in response.text
-    if path == "/upload":
-        assert "data-vector-upload-form" in response.text
-        assert "data-upload-progress" in response.text
-        assert 'data-upload-step="extraction"' in response.text
-        assert 'data-upload-step="ocr" data-status="pending" hidden' in response.text
-        assert 'data-upload-step="embeddings"' in response.text
-        assert 'data-upload-step="indexing"' in response.text
-        assert 'data-upload-badge data-status="pending"' in response.text
+    assert "data-vector-upload-form" in response.text
+    assert "data-upload-progress" in response.text
+    assert 'data-upload-step="extraction"' in response.text
+    assert 'data-upload-step="ocr" data-status="pending" hidden' in response.text
+    assert 'data-upload-step="embeddings"' in response.text
+    assert 'data-upload-step="indexing"' in response.text
+    assert 'data-upload-badge data-status="pending"' in response.text
+    assert 'data-pages-remaining aria-live="polite" hidden' in response.text
 
 
 def test_documents_page_renders_empty_state(web_session_factory):
@@ -551,7 +539,12 @@ def test_upload_indexes_valid_pdf_and_cleans_temporary_file(
     processed_paths = []
 
     class FakeDocumentPipeline:
-        def __init__(self, session, progress_callback=None):
+        def __init__(
+            self,
+            session,
+            progress_callback=None,
+            page_progress_callback=None,
+        ):
             pass
 
         def process(self, path):
@@ -598,8 +591,14 @@ def test_upload_without_sse_accept_keeps_html_form_response(
     )
 
     class FakeDocumentPipeline:
-        def __init__(self, session, progress_callback=None):
+        def __init__(
+            self,
+            session,
+            progress_callback=None,
+            page_progress_callback=None,
+        ):
             assert progress_callback is None
+            assert page_progress_callback is None
 
         def process(self, path):
             return "document-html"
@@ -637,13 +636,22 @@ def test_upload_streams_each_pipeline_stage_and_success(
     )
 
     class ProgressPipeline:
-        def __init__(self, session, progress_callback=None):
+        def __init__(
+            self,
+            session,
+            progress_callback=None,
+            page_progress_callback=None,
+        ):
             self.progress_callback = progress_callback
+            self.page_progress_callback = page_progress_callback
 
         def process(self, path):
+            self.page_progress_callback(2, 2)
             for step in ("extraction", "storage", "embeddings", "indexing"):
                 self.progress_callback(step, "processing")
                 self.progress_callback(step, "completed")
+            self.page_progress_callback(1, 2)
+            self.page_progress_callback(0, 2)
             return "streamed-document"
 
     monkeypatch.setattr(
@@ -665,7 +673,11 @@ def test_upload_streams_each_pipeline_stage_and_success(
         if line.startswith("data: ")
     ]
     assert response.headers["content-type"].startswith("text/event-stream")
-    assert [(event.get("step"), event.get("status")) for event in events] == [
+    assert [
+        (event.get("step"), event.get("status"))
+        for event in events
+        if event["event"] == "progress"
+    ] == [
         ("upload", "completed"),
         ("extraction", "processing"),
         ("extraction", "completed"),
@@ -675,9 +687,13 @@ def test_upload_streams_each_pipeline_stage_and_success(
         ("embeddings", "completed"),
         ("indexing", "processing"),
         ("indexing", "completed"),
-        (None, "completed"),
     ]
     assert events[-1]["event"] == "completed"
+    assert [
+        (event["remaining_pages"], event["total_pages"])
+        for event in events
+        if event["event"] == "page_progress"
+    ] == [(2, 2), (1, 2), (0, 2)]
 
 
 def test_upload_processing_continues_after_progress_stream_disconnects(
@@ -699,7 +715,12 @@ def test_upload_processing_continues_after_progress_stream_disconnects(
     )
 
     class SlowPipeline:
-        def __init__(self, session, progress_callback=None):
+        def __init__(
+            self,
+            session,
+            progress_callback=None,
+            page_progress_callback=None,
+        ):
             pass
 
         def process(self, path):
@@ -768,7 +789,12 @@ def test_concurrent_uploads_receive_independent_progress_streams(
     )
 
     class NamedPipeline:
-        def __init__(self, session, progress_callback=None):
+        def __init__(
+            self,
+            session,
+            progress_callback=None,
+            page_progress_callback=None,
+        ):
             self.progress_callback = progress_callback
 
         def process(self, path):
@@ -877,7 +903,12 @@ def test_upload_enforces_size_limit_and_reports_pipeline_errors(
     failed_paths = []
 
     class BrokenPipeline:
-        def __init__(self, session, progress_callback=None):
+        def __init__(
+            self,
+            session,
+            progress_callback=None,
+            page_progress_callback=None,
+        ):
             pass
 
         def process(self, path):

@@ -57,6 +57,7 @@ def create_pipeline(
     ocr_processor=None,
     chunk_indexer=None,
     progress_callback=None,
+    page_progress_callback=None,
 ):
     if ocr_processor is None:
         ocr_processor = Mock()
@@ -73,6 +74,7 @@ def create_pipeline(
         ),
         chunk_indexer=chunk_indexer,
         progress_callback=progress_callback,
+        page_progress_callback=page_progress_callback,
     )
 
 
@@ -136,6 +138,45 @@ def test_process_native_text(session):
     assert saved_page.content_hash == pipeline._hash_text(page.text)
 
     reader.render_page.assert_not_called()
+
+
+def test_process_reports_page_count_before_and_after_each_page(
+    session,
+    monkeypatch,
+    tmp_path,
+):
+    page_counts = []
+    document_path = tmp_path / "counted.pdf"
+    document_path.write_bytes(b"PDF fixture")
+
+    class FakeReader:
+        def __init__(self, path, progress_callback=None):
+            pass
+
+        def pages(self):
+            for page_number in (1, 2, 3):
+                yield PDFPage(
+                    page_number=page_number,
+                    text=f"Sufficient native text for page {page_number}.",
+                    content_hash=f"{page_number:064d}",
+                    total_pages=3,
+                )
+
+        def render_page(self, page_number):
+            raise AssertionError("Native text pages should not need rendering")
+
+    monkeypatch.setattr("app.pipeline.PDFReader", FakeReader)
+    pipeline = create_pipeline(
+        session,
+        chunk_indexer=Mock(),
+        page_progress_callback=lambda remaining, total: page_counts.append(
+            (remaining, total)
+        ),
+    )
+
+    pipeline.process(str(document_path))
+
+    assert page_counts == [(3, 3), (2, 3), (1, 3), (0, 3)]
 
 
 def test_process_page_indexes_chunks_and_makes_them_retrievable(session):

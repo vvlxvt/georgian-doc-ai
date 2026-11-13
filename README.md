@@ -88,14 +88,19 @@ removes its SQLite records, matching Qdrant vectors, and hash-named uploaded
 original; matching files in `data/input/` are kept. Chat pages display answers
 with their validated source references.
 
-The upload page streams live pipeline updates to the browser using
-Server-Sent Events. It reports native text extraction, OCR when needed, SQLite
-storage, embedding generation, and Qdrant indexing. Progress is temporary and
-held only in memory; it is not saved or restored after a page reload or process
-restart. Closing the page stops progress display but does not cancel the
-in-process worker. The form accepts one PDF per submission; simultaneous
-submissions have independent progress streams. A page-level OCR failure is
-reported as a warning and does not abort processing of the remaining pages.
+Selecting a PDF on the upload page immediately starts its upload and indexing;
+there is no separate submit button. The page streams live pipeline updates to
+the browser using Server-Sent Events. It reports native text extraction, OCR
+when needed, SQLite storage, embedding generation, and Qdrant indexing.
+Progress is temporary and held only in memory; it is not saved or restored
+after a page reload or process restart. Closing the page stops progress display
+but does not cancel the in-process worker. Each selection submits one PDF;
+simultaneous submissions have independent progress streams. A page-level OCR
+failure is reported as a warning and does not abort processing of the
+remaining pages.
+The Stepper also shows the actual number of pages remaining, decrementing only
+after each page's extraction/OCR, storage, and indexing work has finished; it
+does not estimate time or percentage progress.
 Answers use ordinary Russian text with `[стр. N]` page citations. The
 application checks that cited page numbers occur in the retrieved results and
 that each detected sentence has a citation. This membership check does not
