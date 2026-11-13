@@ -137,6 +137,44 @@ def test_index_chunks(
     }
 
 
+def test_index_chunks_reports_embedding_and_qdrant_stage_changes(session):
+    document = Document(filename="test.pdf", file_hash="document-hash")
+    session.add(document)
+    session.flush()
+    page = DocumentPage(
+        document_id=document.id,
+        page_number=1,
+        content_hash="page-hash",
+        status="parsed",
+        extraction_method="native",
+        text="Test document",
+    )
+    session.add(page)
+    session.flush()
+    chunk = DocumentChunk(
+        page_id=page.id,
+        page_number=1,
+        chunk_index=0,
+        text="Georgian document text",
+    )
+    session.add(chunk)
+    session.flush()
+
+    events = []
+    indexer = ChunkIndexer(FakeEmbeddingService(), FakeVectorStore())
+    indexer.index_chunks(
+        [chunk],
+        progress_callback=lambda step, status: events.append((step, status)),
+    )
+
+    assert events == [
+        ("embeddings", "processing"),
+        ("embeddings", "completed"),
+        ("indexing", "processing"),
+        ("indexing", "completed"),
+    ]
+
+
 def test_index_chunks_creates_one_vector_per_chunk(
     session,
 ):

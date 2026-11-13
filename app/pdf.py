@@ -1,5 +1,5 @@
 import hashlib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,12 +15,18 @@ class PDFPage:
 
 class PDFReader:
 
-    def __init__(self, path: str):
+    def __init__(
+        self,
+        path: str,
+        progress_callback: Callable[[str, str], None] | None = None,
+    ):
         self.path = str(Path(path).resolve())
+        self.progress_callback = progress_callback
 
     def pages(self) -> Iterator[PDFPage]:
         with pymupdf.open(self.path) as doc:
             for page_index in range(len(doc)):
+                self._report_progress("processing")
                 page = doc.load_page(page_index)
 
                 text = page.get_text("text") or ""
@@ -32,6 +38,7 @@ class PDFReader:
 
                 content_hash = hashlib.sha256(pix.tobytes("png")).hexdigest()
 
+                self._report_progress("completed")
                 yield PDFPage(
                     page_number=page_index + 1,
                     text=text,
@@ -52,3 +59,7 @@ class PDFReader:
     @staticmethod
     def hash_bytes(data: bytes) -> str:
         return hashlib.sha256(data).hexdigest()
+
+    def _report_progress(self, status: str) -> None:
+        if self.progress_callback is not None:
+            self.progress_callback("extraction", status)

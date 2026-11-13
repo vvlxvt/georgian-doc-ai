@@ -1,5 +1,6 @@
 import hashlib
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from app.config import settings
@@ -19,6 +20,7 @@ class DocumentPipeline:
         text_chunker,
         chunk_indexer,
         min_text_length: int = MIN_TEXT_LENGTH,
+        progress_callback: Callable[[str, str], None] | None = None,
     ):
         self.session = session
         self.ocr_processor = ocr_processor
@@ -27,6 +29,7 @@ class DocumentPipeline:
         self.chunk_repository = DocumentChunkRepository(session)
         self.chunk_indexer = chunk_indexer
         self.min_text_length = min_text_length
+        self.progress_callback = progress_callback
 
     def _get_page(
         self,
@@ -71,7 +74,10 @@ class DocumentPipeline:
             self.session.add(document)
             self.session.commit()
 
-        reader = PDFReader(str(path))
+        reader = PDFReader(
+            str(path),
+            progress_callback=self.progress_callback,
+        )
 
         for page in reader.pages():
             self._process_page(
@@ -95,6 +101,7 @@ class DocumentPipeline:
         if not text:
             return
 
+        self._report_progress("storage", "processing")
         db_page = self._get_or_create_page(
             document=document,
             page=page,
@@ -120,10 +127,17 @@ class DocumentPipeline:
             chunks=chunks,
         )
         self.session.flush()
+        self._report_progress("storage", "completed")
 
         indexed = False
         try:
-            self.chunk_indexer.index_chunks(db_chunks)
+            if self.progress_callback is None:
+                self.chunk_indexer.index_chunks(db_chunks)
+            else:
+                self.chunk_indexer.index_chunks(
+                    db_chunks,
+                    progress_callback=self.progress_callback,
+                )
             indexed = True
             self.chunk_repository.delete_by_ids({chunk.id for chunk in previous_chunks})
             self.session.commit()
@@ -133,6 +147,7 @@ class DocumentPipeline:
             if indexed:
                 self._restore_previous_vectors(previous_chunks, db_page.id)
 
+            self._report_progress("storage", "failed")
             raise
 
         print(f"Page {page.page_number}: " f"{extraction_method}, {len(chunks)} chunks")
@@ -241,6 +256,7 @@ class DocumentPipeline:
         page: PDFPage,
         image_bytes: bytes,
     ) -> str | None:
+        self._report_progress("ocr", "processing")
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_path = Path(temp_dir) / "page.png"
@@ -256,6 +272,7 @@ class DocumentPipeline:
                 page=page,
                 error=f"OCR failed: {exc}",
             )
+            self._report_progress("ocr", "failed")
             return None
 
         if not text.strip():
@@ -264,8 +281,10 @@ class DocumentPipeline:
                 page=page,
                 error="OCR returned empty text",
             )
+            self._report_progress("ocr", "failed")
             return None
 
+        self._report_progress("ocr", "completed")
         return text
 
     def _save_ocr_failure(
@@ -291,6 +310,10 @@ class DocumentPipeline:
     def _hash_text(self, text: str) -> str:
         normalized_text = self.text_normalizer.normalize(text)
         return self._hash_bytes(normalized_text.encode("utf-8"))
+
+    def _report_progress(self, step: str, status: str) -> None:
+        if self.progress_callback is not None:
+            self.progress_callback(step, status)
 
     @staticmethod
     def _hash_bytes(data: bytes) -> str:

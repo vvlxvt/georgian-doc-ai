@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from app.embeddings import EmbeddingService
 from app.models import DocumentChunk
 from app.vector_store import VectorStore
@@ -15,6 +17,7 @@ class ChunkIndexer:
     def index_chunks(
         self,
         chunks: list[DocumentChunk],
+        progress_callback: Callable[[str, str], None] | None = None,
     ) -> None:
         if not chunks:
             return
@@ -26,11 +29,14 @@ class ChunkIndexer:
 
         texts = [chunk.text for chunk in chunks]
 
+        self._report_progress(progress_callback, "embeddings", "processing")
         embeddings = self.embedding_service.embed_many(texts)
 
         if len(embeddings) != len(chunks):
             raise ValueError("Number of embeddings does not match number of chunks")
 
+        self._report_progress(progress_callback, "embeddings", "completed")
+        self._report_progress(progress_callback, "indexing", "processing")
         indexed_ids = set()
 
         try:
@@ -59,3 +65,13 @@ class ChunkIndexer:
             page_id=page_id,
             exclude_ids=indexed_ids,
         )
+        self._report_progress(progress_callback, "indexing", "completed")
+
+    @staticmethod
+    def _report_progress(
+        callback: Callable[[str, str], None] | None,
+        step: str,
+        status: str,
+    ) -> None:
+        if callback is not None:
+            callback(step, status)

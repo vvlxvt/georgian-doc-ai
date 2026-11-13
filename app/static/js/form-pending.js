@@ -108,8 +108,215 @@ document.querySelectorAll("[data-document-chat-form]").forEach((form) => {
   });
 });
 
+const uploadStepLabels = {
+  upload: "Загрузка файла",
+  extraction: "Извлечение текста",
+  ocr: "Распознавание OCR",
+  storage: "Сохранение данных",
+  embeddings: "Создание embeddings",
+  indexing: "Индексация в Qdrant",
+};
+const uploadStepStatusLabels = {
+  pending: "Ожидает",
+  processing: "Выполняется",
+  completed: "Готово",
+  failed: "Ошибка",
+};
+
+document.querySelectorAll("form[data-vector-upload-form]").forEach((form) => {
+  const progress = document.querySelector("[data-upload-progress]");
+  const badge = progress?.querySelector("[data-upload-badge]");
+  const statusMessage = progress?.querySelector("[data-upload-message]");
+  const submitButton = form.querySelector('button[type="submit"]');
+  const originalButtonLabel = submitButton?.textContent;
+  const uploadStatus = document.querySelector("[data-vector-upload-status]");
+
+  if (!progress || !badge || !statusMessage || !submitButton) {
+    return;
+  }
+
+  const setStepStatus = (step, status) => {
+    const row = progress.querySelector(`[data-upload-step="${step}"]`);
+    if (!row) {
+      return;
+    }
+
+    row.hidden = false;
+    row.dataset.status = status;
+    const indicator = row.querySelector(".upload-step-indicator");
+    const statusLabel = row.querySelector("[data-step-status]");
+    if (indicator) {
+      indicator.textContent =
+        status === "completed" ? "✓" : status === "failed" ? "!" : "○";
+    }
+    if (statusLabel) {
+      statusLabel.textContent = uploadStepStatusLabels[status] || status;
+    }
+  };
+
+  const setOverallStatus = (status, message) => {
+    badge.dataset.status = status;
+    badge.textContent =
+      status === "completed"
+        ? "Готово"
+        : status === "failed"
+          ? "Ошибка"
+          : status === "processing"
+            ? "Обработка"
+            : "Ожидает";
+    statusMessage.textContent = message;
+  };
+
+  const resetProgress = () => {
+    progress.querySelectorAll("[data-upload-step]").forEach((row) => {
+      row.dataset.status = "pending";
+      row.hidden = row.dataset.uploadStep === "ocr";
+      row.querySelector(".upload-step-indicator").textContent = "○";
+      row.querySelector("[data-step-status]").textContent =
+        uploadStepStatusLabels.pending;
+    });
+  };
+
+  const finishProgress = () => {
+    progress.querySelectorAll('[data-upload-step][data-status="pending"]').forEach(
+      (row) => {
+        row.hidden = true;
+      },
+    );
+    if (uploadStatus) {
+      uploadStatus.hidden = true;
+    }
+  };
+
+  const handleUploadEvent = (uploadEvent) => {
+    if (uploadEvent.event === "progress") {
+      setStepStatus(uploadEvent.step, uploadEvent.status);
+      if (uploadEvent.status === "processing") {
+        setOverallStatus(
+          "processing",
+          `${uploadStepLabels[uploadEvent.step] || "Обработка"}...`,
+        );
+      } else if (uploadEvent.status === "failed" && uploadEvent.message) {
+        setOverallStatus("processing", uploadEvent.message);
+      }
+      return false;
+    }
+
+    if (uploadEvent.event === "completed") {
+      progress.querySelectorAll('[data-upload-step][data-status="processing"]')
+        .forEach((row) => setStepStatus(row.dataset.uploadStep, "completed"));
+      finishProgress();
+      setOverallStatus("completed", uploadEvent.message);
+      return true;
+    }
+
+    if (uploadEvent.event === "failed") {
+      setStepStatus(uploadEvent.step, "failed");
+      setOverallStatus(
+        "failed",
+        `${uploadStepLabels[uploadEvent.step] || "Обработка"}: ${uploadEvent.message}`,
+      );
+      finishProgress();
+      return true;
+    }
+
+    return false;
+  };
+
+  const readProgressStream = async (response) => {
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error("Прогресс обработки недоступен.");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let terminalEventReceived = false;
+
+    while (!terminalEventReceived) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+      let frameEnd = buffer.indexOf("\n\n");
+      while (frameEnd !== -1) {
+        const frame = buffer.slice(0, frameEnd);
+        buffer = buffer.slice(frameEnd + 2);
+        const dataLine = frame.split("\n").find((line) => line.startsWith("data: "));
+        if (dataLine) {
+          terminalEventReceived = handleUploadEvent(
+            JSON.parse(dataLine.slice(6)),
+          );
+        }
+        frameEnd = buffer.indexOf("\n\n");
+      }
+
+      if (done) {
+        break;
+      }
+    }
+
+    await reader.cancel();
+    if (!terminalEventReceived) {
+      throw new Error("Поток обновлений завершился до окончания обработки.");
+    }
+  };
+
+  form.addEventListener("submit", async (event) => {
+    if (event.defaultPrevented || form.getAttribute("aria-busy") === "true") {
+      event.preventDefault();
+      return;
+    }
+
+    event.preventDefault();
+    resetProgress();
+    setStepStatus("upload", "processing");
+    setOverallStatus("processing", "Файл передаётся на сервер.");
+    form.setAttribute("aria-busy", "true");
+    submitButton.disabled = true;
+    submitButton.textContent = form.dataset.pendingLabel || "Загрузка...";
+
+    if (form.matches("[data-vector-upload-form]")) {
+      if (uploadStatus) {
+        uploadStatus.hidden = false;
+      }
+    }
+
+    try {
+      const response = await fetch(form.action, {
+        method: "POST",
+        body: new FormData(form),
+        headers: { Accept: "text/event-stream" },
+      });
+
+      if (response.headers.get("content-type")?.includes("text/event-stream")) {
+        await readProgressStream(response);
+      } else {
+        const html = await response.text();
+        const parsed = new DOMParser().parseFromString(html, "text/html");
+        const message =
+          parsed.querySelector(".alert-error")?.textContent.trim() ||
+          "Не удалось принять файл. Проверьте PDF и повторите попытку.";
+        setStepStatus("upload", "failed");
+        setOverallStatus("failed", message);
+        finishProgress();
+      }
+    } catch {
+      setOverallStatus(
+        "processing",
+        "Соединение прервано. Обработка может продолжаться на сервере; проверьте список документов.",
+      );
+    } finally {
+      form.removeAttribute("aria-busy");
+      submitButton.disabled = false;
+      submitButton.textContent = originalButtonLabel;
+    }
+  });
+});
+
 document
-  .querySelectorAll("form[data-pending-message], form.chat-composer")
+  .querySelectorAll(
+    "form[data-pending-message]:not([data-vector-upload-form]), form.chat-composer",
+  )
   .forEach((form) => {
     form.addEventListener("submit", (event) => {
       if (event.defaultPrevented || form.getAttribute("aria-busy") === "true") {
@@ -133,13 +340,6 @@ document
 
       if (!pendingMessage || !pendingStatus || !submitButton) {
         return;
-      }
-
-      if (form.matches("[data-vector-upload-form]")) {
-        const uploadStatus = document.querySelector("[data-vector-upload-status]");
-        if (uploadStatus) {
-          uploadStatus.hidden = false;
-        }
       }
 
       pendingStatus.textContent = pendingMessage;

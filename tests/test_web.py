@@ -1,6 +1,10 @@
+import asyncio
 import hashlib
+import json
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from starlette.datastructures import UploadFile as StarletteUploadFile
 from starlette.requests import Request
 
 from app.models import Base, Document, DocumentChunk, DocumentPage, PageStatus
@@ -105,6 +110,12 @@ def test_static_pending_script_is_mounted():
         response.text
     )
     assert "submitButton.disabled = !hasSelectedDocument()" in response.text
+    assert 'form.addEventListener("submit", async (event) =>' in response.text
+    assert 'response.headers.get("content-type")?.includes("text/event-stream")' in (
+        response.text
+    )
+    assert 'uploadEvent.event === "completed"' in response.text
+    assert 'uploadEvent.event === "failed"' in response.text
 
 
 @pytest.mark.parametrize(
@@ -137,6 +148,12 @@ def test_processing_forms_render_accessible_pending_status(
     assert "form-pending.js" in response.text
     if path == "/upload":
         assert "data-vector-upload-form" in response.text
+        assert "data-upload-progress" in response.text
+        assert 'data-upload-step="extraction"' in response.text
+        assert 'data-upload-step="ocr" data-status="pending" hidden' in response.text
+        assert 'data-upload-step="embeddings"' in response.text
+        assert 'data-upload-step="indexing"' in response.text
+        assert 'data-upload-badge data-status="pending"' in response.text
 
 
 def test_documents_page_renders_empty_state(web_session_factory):
@@ -534,7 +551,7 @@ def test_upload_indexes_valid_pdf_and_cleans_temporary_file(
     processed_paths = []
 
     class FakeDocumentPipeline:
-        def __init__(self, session):
+        def __init__(self, session, progress_callback=None):
             pass
 
         def process(self, path):
@@ -556,13 +573,250 @@ def test_upload_indexes_valid_pdf_and_cleans_temporary_file(
         )
 
     assert response.status_code == 200
-    assert "Документ проиндексирован" in response.text
-    assert "valid.pdf" in response.text
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert '"event": "completed"' in response.text
+    assert '"document_id": "document-123"' in response.text
+    assert '"filename": "valid.pdf"' in response.text
     assert processed_paths
     assert not Path(processed_paths[0]).exists()
     file_hash = hashlib.sha256(b"%PDF-1.7 test").hexdigest()
     assert (storage_directory / f"{file_hash}.pdf").read_bytes() == b"%PDF-1.7 test"
     (storage_directory / f"{file_hash}.pdf").unlink()
+
+
+def test_upload_without_sse_accept_keeps_html_form_response(
+    web_session_factory,
+    monkeypatch,
+    tmp_path,
+):
+    from app import dependencies, web_routes
+
+    monkeypatch.setattr(
+        web_routes,
+        "ORIGINAL_DOCUMENT_DIRECTORY",
+        tmp_path / "documents",
+    )
+
+    class FakeDocumentPipeline:
+        def __init__(self, session, progress_callback=None):
+            assert progress_callback is None
+
+        def process(self, path):
+            return "document-html"
+
+    monkeypatch.setattr(
+        dependencies,
+        "create_document_pipeline",
+        FakeDocumentPipeline,
+    )
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.post(
+            "/upload",
+            files={"file": ("valid.pdf", b"%PDF-1.7 test", "application/pdf")},
+            headers={"Accept": "text/html"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Документ проиндексирован" in response.text
+
+
+def test_upload_streams_each_pipeline_stage_and_success(
+    web_session_factory,
+    monkeypatch,
+    tmp_path,
+):
+    from app import dependencies, web_routes
+
+    monkeypatch.setattr(
+        web_routes,
+        "ORIGINAL_DOCUMENT_DIRECTORY",
+        tmp_path / "documents",
+    )
+
+    class ProgressPipeline:
+        def __init__(self, session, progress_callback=None):
+            self.progress_callback = progress_callback
+
+        def process(self, path):
+            for step in ("extraction", "storage", "embeddings", "indexing"):
+                self.progress_callback(step, "processing")
+                self.progress_callback(step, "completed")
+            return "streamed-document"
+
+    monkeypatch.setattr(
+        dependencies,
+        "create_document_pipeline",
+        ProgressPipeline,
+    )
+    application = create_app(session_factory=web_session_factory)
+
+    with TestClient(application) as client:
+        response = client.post(
+            "/upload",
+            files={"file": ("valid.pdf", b"%PDF-1.7 test", "application/pdf")},
+        )
+
+    events = [
+        json.loads(line.removeprefix("data: "))
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert [(event.get("step"), event.get("status")) for event in events] == [
+        ("upload", "completed"),
+        ("extraction", "processing"),
+        ("extraction", "completed"),
+        ("storage", "processing"),
+        ("storage", "completed"),
+        ("embeddings", "processing"),
+        ("embeddings", "completed"),
+        ("indexing", "processing"),
+        ("indexing", "completed"),
+        (None, "completed"),
+    ]
+    assert events[-1]["event"] == "completed"
+
+
+def test_upload_processing_continues_after_progress_stream_disconnects(
+    web_session_factory,
+    monkeypatch,
+    tmp_path,
+):
+    from app import dependencies, web_routes
+
+    started = Event()
+    release = Event()
+    finished = Event()
+    processed_paths = []
+    storage_directory = tmp_path / "documents"
+    monkeypatch.setattr(
+        web_routes,
+        "ORIGINAL_DOCUMENT_DIRECTORY",
+        storage_directory,
+    )
+
+    class SlowPipeline:
+        def __init__(self, session, progress_callback=None):
+            pass
+
+        def process(self, path):
+            processed_paths.append(path)
+            started.set()
+            assert release.wait(timeout=5)
+            finished.set()
+            return "disconnected-document"
+
+    monkeypatch.setattr(dependencies, "create_document_pipeline", SlowPipeline)
+    application = create_app(session_factory=web_session_factory)
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/upload",
+        "headers": [],
+        "app": application,
+        "scheme": "http",
+        "server": ("testserver", 80),
+        "client": ("testclient", 50000),
+        "query_string": b"",
+        "root_path": "",
+        "http_version": "1.1",
+    }
+
+    async def disconnect_stream():
+        response = await web_routes.upload_document(
+            Request(scope),
+            StarletteUploadFile(
+                filename="valid.pdf",
+                file=BytesIO(b"%PDF-1.7 test"),
+            ),
+        )
+        iterator = response.body_iterator
+        first_event = await iterator.__anext__()
+        await iterator.aclose()
+        assert await asyncio.to_thread(started.wait, 2)
+        release.set()
+        assert await asyncio.to_thread(finished.wait, 2)
+        for _ in range(100):
+            if not application.state.upload_tasks:
+                break
+            await asyncio.sleep(0.01)
+        return first_event
+
+    first_event = asyncio.run(disconnect_stream())
+    assert '"step": "upload"' in first_event
+
+    assert processed_paths
+    assert not Path(processed_paths[0]).exists()
+    file_hash = hashlib.sha256(b"%PDF-1.7 test").hexdigest()
+    assert (storage_directory / f"{file_hash}.pdf").exists()
+
+
+def test_concurrent_uploads_receive_independent_progress_streams(
+    web_session_factory,
+    monkeypatch,
+    tmp_path,
+):
+    from app import dependencies, web_routes
+
+    monkeypatch.setattr(
+        web_routes,
+        "ORIGINAL_DOCUMENT_DIRECTORY",
+        tmp_path / "documents",
+    )
+
+    class NamedPipeline:
+        def __init__(self, session, progress_callback=None):
+            self.progress_callback = progress_callback
+
+        def process(self, path):
+            self.progress_callback("extraction", "processing")
+            self.progress_callback("extraction", "completed")
+            return Path(path).stem
+
+    monkeypatch.setattr(dependencies, "create_document_pipeline", NamedPipeline)
+    application = create_app(session_factory=web_session_factory)
+
+    async def upload(filename, content):
+        response = await web_routes.upload_document(
+            Request(
+                {
+                    "type": "http",
+                    "method": "POST",
+                    "path": "/upload",
+                    "headers": [],
+                    "app": application,
+                    "scheme": "http",
+                    "server": ("testserver", 80),
+                    "client": ("testclient", 50000),
+                    "query_string": b"",
+                    "root_path": "",
+                    "http_version": "1.1",
+                }
+            ),
+            StarletteUploadFile(filename=filename, file=BytesIO(content)),
+        )
+        return [
+            json.loads(line.removeprefix("data: "))
+            async for line in response.body_iterator
+            if line.startswith("data: ")
+        ]
+
+    async def upload_concurrently():
+        return await asyncio.gather(
+            upload("first.pdf", b"%PDF-1.7 first"),
+            upload("second.pdf", b"%PDF-1.7 second"),
+        )
+
+    first_events, second_events = asyncio.run(upload_concurrently())
+    assert first_events[-1]["event"] == "completed"
+    assert first_events[-1]["document_id"] == "first"
+    assert first_events[-1]["filename"] == "first.pdf"
+    assert second_events[-1]["event"] == "completed"
+    assert second_events[-1]["document_id"] == "second"
+    assert second_events[-1]["filename"] == "second.pdf"
 
 
 @pytest.mark.parametrize(
@@ -623,7 +877,7 @@ def test_upload_enforces_size_limit_and_reports_pipeline_errors(
     failed_paths = []
 
     class BrokenPipeline:
-        def __init__(self, session):
+        def __init__(self, session, progress_callback=None):
             pass
 
         def process(self, path):
@@ -643,7 +897,8 @@ def test_upload_enforces_size_limit_and_reports_pipeline_errors(
             files={"file": ("valid.pdf", b"%PDF-1.7 test", "application/pdf")},
         )
 
-    assert failed.status_code == 503
+    assert failed.status_code == 200
+    assert '"event": "failed"' in failed.text
     assert "Не удалось обработать документ" in failed.text
     assert "private internal details" not in failed.text
     assert failed_paths

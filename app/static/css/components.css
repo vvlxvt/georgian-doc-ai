@@ -1196,13 +1196,54 @@ h2 {
 }
 
 .upload-aside h2 {
-  margin-bottom: 1.1rem;
+  margin-bottom: 0;
   font-size: 1.12rem;
+}
+
+.upload-progress-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.upload-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  padding: 0.28rem 0.6rem;
+  border-radius: 999px;
+  color: #6f5c35;
+  background: #f7f1e4;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.upload-status-badge[data-status="processing"] {
+  color: #315f4c;
+  background: #e4f0e7;
+}
+
+.upload-status-badge[data-status="completed"] {
+  color: #315f4c;
+  background: #dcecdf;
+}
+
+.upload-status-badge[data-status="failed"] {
+  color: #8e3f3b;
+  background: #f8e6e3;
+}
+
+.upload-progress-message {
+  margin: 0.85rem 0 1rem;
+  color: #58655b;
+  font-size: 0.78rem;
 }
 
 .upload-steps {
   display: grid;
-  gap: 0.95rem;
+  gap: 0.65rem;
   margin: 0 0 1.2rem;
   padding: 0;
   list-style: none;
@@ -1210,22 +1251,91 @@ h2 {
 
 .upload-steps li {
   display: grid;
-  grid-template-columns: 1.7rem minmax(0, 1fr);
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  align-items: start;
   gap: 0.6rem;
 }
 
-.upload-steps li > span {
-  color: #66836b;
-  font-size: 0.68rem;
-  font-weight: 750;
-  letter-spacing: 0.06em;
+.upload-steps li[hidden] {
+  display: none;
+}
+
+.upload-step-indicator {
+  display: grid;
+  width: 1.15rem;
+  height: 1.15rem;
+  place-items: center;
+  color: #89918a;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.upload-steps li[data-status="completed"] .upload-step-indicator {
+  color: #3d7650;
+  font-weight: 800;
+}
+
+.upload-steps li[data-status="failed"] .upload-step-indicator {
+  color: #b94d47;
+  font-weight: 800;
+}
+
+.upload-steps li[data-status="processing"] .upload-step-indicator {
+  width: 0.85rem;
+  height: 0.85rem;
+  margin: 0.15rem;
+  border: 2px solid #a9c5ae;
+  border-top-color: #3d7650;
+  border-radius: 50%;
+  animation: upload-step-spin 800ms linear infinite;
+  font-size: 0;
+}
+
+.upload-steps li[data-status="completed"] p {
+  color: #315f4c;
+}
+
+.upload-steps li[data-status="failed"] p {
+  color: #8e3f3b;
+}
+
+.upload-steps li p > span {
+  display: block;
+  margin-top: 0.08rem;
+  color: var(--color-muted);
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
+@keyframes upload-step-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .upload-steps li p {
   margin: 0;
   color: #58655b;
   font-size: 0.78rem;
-  line-height: 1.5;
+  line-height: 1.45;
+}
+
+.upload-progress .text-link {
+  font-size: 0.78rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upload-steps li[data-status="processing"] .upload-step-indicator {
+    animation-duration: 2s;
+  }
+}
+
+/* Preserve the numbered list styling used by other informational upload pages. */
+.upload-steps li > span:not(.upload-step-indicator) {
+  color: #66836b;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
 }
 
 .document-filter {

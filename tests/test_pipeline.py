@@ -52,7 +52,12 @@ class FakeVectorStore(VectorStore):
         }
 
 
-def create_pipeline(session, ocr_processor=None, chunk_indexer=None):
+def create_pipeline(
+    session,
+    ocr_processor=None,
+    chunk_indexer=None,
+    progress_callback=None,
+):
     if ocr_processor is None:
         ocr_processor = Mock()
     if chunk_indexer is None:
@@ -67,6 +72,7 @@ def create_pipeline(session, ocr_processor=None, chunk_indexer=None):
             overlap=50,
         ),
         chunk_indexer=chunk_indexer,
+        progress_callback=progress_callback,
     )
 
 
@@ -191,15 +197,25 @@ def test_reprocessing_page_replaces_old_database_chunks_and_vectors(session):
 
 
 def test_indexing_failure_rolls_back_new_page_and_leaves_no_vectors(session):
+    events = []
     chunk_indexer = Mock()
     chunk_indexer.index_chunks.side_effect = RuntimeError("Qdrant is unavailable")
-    pipeline = create_pipeline(session, chunk_indexer=chunk_indexer)
+    pipeline = create_pipeline(
+        session,
+        chunk_indexer=chunk_indexer,
+        progress_callback=lambda step, status: events.append((step, status)),
+    )
     document = create_document(session)
 
     with pytest.raises(RuntimeError, match="Qdrant is unavailable"):
         pipeline._process_page(document, create_page(), Mock())
 
     assert get_document_page(session, document) is None
+    assert events == [
+        ("storage", "processing"),
+        ("storage", "completed"),
+        ("storage", "failed"),
+    ]
 
 
 def test_reindexing_failure_keeps_previous_chunks_and_vectors(session):
@@ -277,6 +293,58 @@ def test_process_page_with_ocr(session):
     ocr_processor.recognize.assert_called_once()
 
 
+def test_process_page_reports_ocr_and_sqlite_stage_changes(session):
+    events = []
+    ocr_processor = Mock()
+    ocr_processor.recognize.return_value = "Recognized text with enough content."
+
+    class ProgressIndexer:
+        def index_chunks(self, chunks, progress_callback=None):
+            progress_callback("embeddings", "processing")
+            progress_callback("embeddings", "completed")
+            progress_callback("indexing", "processing")
+            progress_callback("indexing", "completed")
+
+    pipeline = create_pipeline(
+        session,
+        ocr_processor=ocr_processor,
+        chunk_indexer=ProgressIndexer(),
+        progress_callback=lambda step, status: events.append((step, status)),
+    )
+    pipeline._process_page(
+        create_document(session),
+        create_page(text=""),
+        Mock(render_page=Mock(return_value=b"page image")),
+    )
+
+    assert events == [
+        ("ocr", "processing"),
+        ("ocr", "completed"),
+        ("storage", "processing"),
+        ("storage", "completed"),
+        ("embeddings", "processing"),
+        ("embeddings", "completed"),
+        ("indexing", "processing"),
+        ("indexing", "completed"),
+    ]
+
+
+def test_process_page_does_not_report_ocr_for_native_text(session):
+    events = []
+    ocr_processor = Mock()
+
+    pipeline = create_pipeline(
+        session,
+        ocr_processor=ocr_processor,
+        chunk_indexer=Mock(),
+        progress_callback=lambda step, status: events.append((step, status)),
+    )
+    pipeline._process_page(create_document(session), create_page(), Mock())
+
+    assert ("ocr", "processing") not in events
+    ocr_processor.recognize.assert_not_called()
+
+
 def test_process_page_when_ocr_fails(session):
     document = create_document(session)
 
@@ -317,6 +385,25 @@ def test_process_page_when_ocr_fails(session):
     assert saved_page.content_hash == pipeline._hash_bytes(
         image_bytes,
     )
+
+
+def test_ocr_failure_reports_nonterminal_failed_stage(session):
+    events = []
+    ocr_processor = Mock()
+    ocr_processor.recognize.side_effect = RuntimeError("Tesseract failed")
+    pipeline = create_pipeline(
+        session,
+        ocr_processor=ocr_processor,
+        progress_callback=lambda step, status: events.append((step, status)),
+    )
+
+    pipeline._process_page(
+        create_document(session),
+        create_page(text=""),
+        Mock(render_page=Mock(return_value=b"page image")),
+    )
+
+    assert events == [("ocr", "processing"), ("ocr", "failed")]
 
 
 def test_process_page_skips_already_processed_native_page(session):

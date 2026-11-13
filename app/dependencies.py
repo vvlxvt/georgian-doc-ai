@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from functools import lru_cache
 
 from qdrant_client import QdrantClient
@@ -114,7 +115,10 @@ def get_chunk_indexer() -> ChunkIndexer:
     )
 
 
-def create_document_pipeline(session) -> DocumentPipeline:
+def create_document_pipeline(
+    session,
+    progress_callback: Callable[[str, str], None] | None = None,
+) -> DocumentPipeline:
     """Build the ingestion pipeline. The caller owns the session lifecycle."""
     return DocumentPipeline(
         session=session,
@@ -126,6 +130,7 @@ def create_document_pipeline(session) -> DocumentPipeline:
         ),
         chunk_indexer=get_chunk_indexer(),
         min_text_length=settings.min_text_length,
+        progress_callback=progress_callback,
     )
 
 

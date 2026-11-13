@@ -87,6 +87,15 @@ be uploaded through the UI to make the original available. Deleting a document
 removes its SQLite records, matching Qdrant vectors, and hash-named uploaded
 original; matching files in `data/input/` are kept. Chat pages display answers
 with their validated source references.
+
+The upload page streams live pipeline updates to the browser using
+Server-Sent Events. It reports native text extraction, OCR when needed, SQLite
+storage, embedding generation, and Qdrant indexing. Progress is temporary and
+held only in memory; it is not saved or restored after a page reload or process
+restart. Closing the page stops progress display but does not cancel the
+in-process worker. The form accepts one PDF per submission; simultaneous
+submissions have independent progress streams. A page-level OCR failure is
+reported as a warning and does not abort processing of the remaining pages.
 Answers use ordinary Russian text with `[стр. N]` page citations. The
 application checks that cited page numbers occur in the retrieved results and
 that each detected sentence has a citation. This membership check does not

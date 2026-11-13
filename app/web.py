@@ -23,6 +23,7 @@ def create_app(
         openapi_url=None,
     )
     application.state.session_factory = session_factory or SessionLocal
+    application.state.upload_tasks = set()
     application.include_router(router)
     application.mount(
         "/static",

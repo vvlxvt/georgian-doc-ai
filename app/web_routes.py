@@ -1,5 +1,8 @@
+import asyncio
 import hashlib
+import json
 import logging
+import queue
 import shutil
 from datetime import datetime
 from math import ceil
@@ -16,7 +19,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -364,10 +367,9 @@ def upload_form(request: Request):
 
 
 @router.post("/upload", name="upload_document")
-def upload_document(
+async def upload_document(
     request: Request,
     file: UploadFile = File(...),
-    session: Session = Depends(get_session),
 ):
     filename = (file.filename or "").replace("\\", "/")
     filename = Path(filename).name.strip()
@@ -378,47 +380,103 @@ def upload_document(
     if not filename or Path(filename).suffix.lower() != ".pdf":
         error = "Выберите файл с расширением .pdf."
         status_code = 422
-        file.file.close()
+        await file.close()
     else:
+        temporary_upload = TemporaryDirectory(prefix="georgian-doc-")
+        temp_path = Path(temporary_upload.name) / filename
         try:
-            with TemporaryDirectory(prefix="georgian-doc-") as temp_directory:
-                temp_path = Path(temp_directory) / filename
-                total_bytes = 0
-                header = b""
-                file_hash = hashlib.sha256()
+            total_bytes, header, file_digest = await asyncio.to_thread(
+                _copy_upload_to_temp,
+                file.file,
+                temp_path,
+            )
+        except OSError:
+            temporary_upload.cleanup()
+            logger.exception("Failed to stage uploaded PDF")
+            error = "Не удалось принять файл. Повторите попытку."
+            status_code = 503
+        finally:
+            await file.close()
 
-                with temp_path.open("wb") as temp_file:
-                    while chunk := file.file.read(UPLOAD_CHUNK_BYTES):
-                        total_bytes += len(chunk)
-                        if total_bytes > MAX_UPLOAD_BYTES:
-                            error = (
-                                "Файл превышает допустимый размер "
-                                f"{MAX_UPLOAD_BYTES // (1024 * 1024)} МиБ."
-                            )
-                            status_code = 413
-                            break
-                        if not header:
-                            header = chunk[:5]
-                        temp_file.write(chunk)
-                        file_hash.update(chunk)
+        if error is None and total_bytes > MAX_UPLOAD_BYTES:
+            error = (
+                "Файл превышает допустимый размер "
+                f"{MAX_UPLOAD_BYTES // (1024 * 1024)} МиБ."
+            )
+            status_code = 413
+        elif error is None and total_bytes == 0:
+            error = "Файл пуст. Выберите PDF с содержимым."
+            status_code = 422
+        elif error is None and header != b"%PDF-":
+            error = "Файл не похож на PDF. Проверьте выбранный документ."
+            status_code = 422
 
-                if error is None and total_bytes == 0:
-                    error = "Файл пуст. Выберите PDF с содержимым."
-                    status_code = 422
-                elif error is None and header != b"%PDF-":
-                    error = "Файл не похож на PDF. Проверьте выбранный документ."
-                    status_code = 422
+        if error is not None:
+            temporary_upload.cleanup()
+        else:
+            accept_header = request.headers.get("accept", "").lower()
+            wants_html_response = (
+                "text/html" in accept_header
+                and "text/event-stream" not in accept_header
+            )
+            event_queue: queue.Queue[dict[str, str]] = queue.Queue(maxsize=128)
+            active_step = "extraction"
+            ocr_failed = False
 
-                if error is None:
+            def enqueue_event(event: dict[str, str]) -> None:
+                try:
+                    event_queue.put_nowait(event)
+                except queue.Full:
+                    try:
+                        event_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                    event_queue.put_nowait(event)
+
+            def report_progress(step: str, step_status: str) -> None:
+                nonlocal active_step, ocr_failed
+                if step_status in {"processing", "failed"}:
+                    active_step = step
+                event = {
+                    "event": "progress",
+                    "step": step,
+                    "status": step_status,
+                }
+                if step == "ocr" and step_status == "failed":
+                    ocr_failed = True
+                    event["message"] = (
+                        "Не удалось распознать страницу; остальные страницы "
+                        "обрабатываются."
+                    )
+                enqueue_event(event)
+
+            if not wants_html_response:
+                enqueue_event(
+                    {
+                        "event": "progress",
+                        "step": "upload",
+                        "status": "completed",
+                    }
+                )
+
+            def process_upload() -> dict[str, str] | None:
+                nonlocal active_step
+                session = None
+                terminal_event = None
+                try:
                     from app.dependencies import create_document_pipeline
 
-                    document_id = create_document_pipeline(session).process(
-                        str(temp_path)
-                    )
+                    session = request.app.state.session_factory()
+                    document_id = create_document_pipeline(
+                        session,
+                        progress_callback=(
+                            None if wants_html_response else report_progress
+                        ),
+                    ).process(str(temp_path))
+
+                    active_step = "storage"
                     ORIGINAL_DOCUMENT_DIRECTORY.mkdir(parents=True, exist_ok=True)
-                    original_path = (
-                        ORIGINAL_DOCUMENT_DIRECTORY / f"{file_hash.hexdigest()}.pdf"
-                    )
+                    original_path = ORIGINAL_DOCUMENT_DIRECTORY / f"{file_digest}.pdf"
                     with TemporaryDirectory(
                         prefix="georgian-original-",
                         dir=ORIGINAL_DOCUMENT_DIRECTORY,
@@ -426,15 +484,93 @@ def upload_document(
                         staged_path = Path(staging_directory) / "original.pdf"
                         shutil.copyfile(temp_path, staged_path)
                         staged_path.replace(original_path)
-        except Exception:
-            logger.exception("PDF upload and indexing failed")
-            error = (
-                "Не удалось обработать документ. Проверьте доступность служб "
-                "и повторите попытку."
+
+                    terminal_event = {
+                        "event": "completed",
+                        "status": "completed",
+                        "document_id": document_id,
+                        "filename": filename,
+                        "message": (
+                            "Документ обработан, но часть страниц не распознана."
+                            if ocr_failed
+                            else "Документ обработан и проиндексирован."
+                        ),
+                    }
+                except Exception:
+                    logger.exception("PDF upload and indexing failed")
+                    terminal_event = {
+                        "event": "failed",
+                        "step": active_step,
+                        "status": "failed",
+                        "message": (
+                            "Не удалось обработать документ. Проверьте "
+                            "доступность служб и повторите попытку."
+                        ),
+                    }
+                finally:
+                    if session is not None:
+                        try:
+                            session.close()
+                        except Exception:
+                            logger.exception("Failed to close upload database session")
+                    try:
+                        temporary_upload.cleanup()
+                    except OSError:
+                        logger.exception("Failed to clean up temporary PDF upload")
+                    if terminal_event is not None and not wants_html_response:
+                        enqueue_event(terminal_event)
+                return terminal_event
+
+            async def run_upload() -> None:
+                await asyncio.to_thread(process_upload)
+
+            if wants_html_response:
+                result = await asyncio.to_thread(process_upload)
+                if result is None:
+                    raise RuntimeError("Upload worker ended without a terminal result")
+                if result["event"] == "completed":
+                    document_id = result["document_id"]
+                else:
+                    error = result["message"]
+                    status_code = 503
+                return templates.TemplateResponse(
+                    request=request,
+                    name="upload.html",
+                    context={
+                        "error": error,
+                        "document_id": document_id,
+                        "filename": filename,
+                        "max_upload_mib": MAX_UPLOAD_BYTES // (1024 * 1024),
+                    },
+                    status_code=status_code,
+                )
+
+            upload_task = asyncio.create_task(run_upload())
+            request.app.state.upload_tasks.add(upload_task)
+            upload_task.add_done_callback(request.app.state.upload_tasks.discard)
+
+            async def stream_events():
+                while True:
+                    try:
+                        event = event_queue.get_nowait()
+                    except queue.Empty:
+                        if upload_task.done():
+                            break
+                        await asyncio.sleep(0.05)
+                        continue
+
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                    if event["event"] in {"completed", "failed"}:
+                        break
+
+            return StreamingResponse(
+                stream_events(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                },
             )
-            status_code = 503
-        finally:
-            file.file.close()
 
     return templates.TemplateResponse(
         request=request,
@@ -447,6 +583,24 @@ def upload_document(
         },
         status_code=status_code,
     )
+
+
+def _copy_upload_to_temp(file, temp_path: Path) -> tuple[int, bytes, str]:
+    total_bytes = 0
+    header = b""
+    file_hash = hashlib.sha256()
+
+    with temp_path.open("wb") as temp_file:
+        while chunk := file.read(UPLOAD_CHUNK_BYTES):
+            total_bytes += len(chunk)
+            if total_bytes > MAX_UPLOAD_BYTES:
+                break
+            if not header:
+                header = chunk[:5]
+            temp_file.write(chunk)
+            file_hash.update(chunk)
+
+    return total_bytes, header, file_hash.hexdigest()
 
 
 @router.get("/chats", name="chats")

@@ -63,13 +63,48 @@
       </div>
     </form>
 
-    <aside class="upload-aside" aria-labelledby="upload-steps-title">
-      <p class="eyebrow">После загрузки</p>
-      <h2 id="upload-steps-title">Что произойдёт с документом</h2>
-      <ol class="upload-steps">
-        <li><span>01</span><p>Приложение проверит PDF и извлечёт текст страниц.</p></li>
-        <li><span>02</span><p>Если текстового слоя недостаточно, будет использовано распознавание OCR.</p></li>
-        <li><span>03</span><p>Документ станет доступен в библиотеке и для поиска по вопросам.</p></li>
+    <aside
+      class="upload-aside upload-progress"
+      aria-labelledby="upload-steps-title"
+      data-upload-progress
+    >
+      <div class="upload-progress-heading">
+        <div>
+          <p class="eyebrow">Обработка документа</p>
+          <h2 id="upload-steps-title">Этапы обработки</h2>
+        </div>
+        <span class="upload-status-badge" data-upload-badge data-status="pending">
+          Ожидает
+        </span>
+      </div>
+      <p class="upload-progress-message" data-upload-message role="status" aria-live="polite">
+        Выберите PDF, чтобы начать обработку.
+      </p>
+      <ol class="upload-steps" data-upload-stepper>
+        <li data-upload-step="upload" data-status="pending">
+          <span class="upload-step-indicator" aria-hidden="true">○</span>
+          <p>Загрузка файла <span data-step-status>Ожидает</span></p>
+        </li>
+        <li data-upload-step="extraction" data-status="pending">
+          <span class="upload-step-indicator" aria-hidden="true">○</span>
+          <p>Извлечение текста <span data-step-status>Ожидает</span></p>
+        </li>
+        <li data-upload-step="ocr" data-status="pending" hidden>
+          <span class="upload-step-indicator" aria-hidden="true">○</span>
+          <p>Распознавание OCR <span data-step-status>Ожидает</span></p>
+        </li>
+        <li data-upload-step="storage" data-status="pending">
+          <span class="upload-step-indicator" aria-hidden="true">○</span>
+          <p>Сохранение данных <span data-step-status>Ожидает</span></p>
+        </li>
+        <li data-upload-step="embeddings" data-status="pending">
+          <span class="upload-step-indicator" aria-hidden="true">○</span>
+          <p>Создание embeddings <span data-step-status>Ожидает</span></p>
+        </li>
+        <li data-upload-step="indexing" data-status="pending">
+          <span class="upload-step-indicator" aria-hidden="true">○</span>
+          <p>Индексация в Qdrant <span data-step-status>Ожидает</span></p>
+        </li>
       </ol>
       <a class="text-link" href="{{ url_for('documents') }}">Перейти в библиотеку <span aria-hidden="true">→</span></a>
     </aside>
